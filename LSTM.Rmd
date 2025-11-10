@@ -1,0 +1,615 @@
+---
+title: "Deep Temporal Learning for HIV Forecasting: Modeling Epidemic Dynamics with Long Short-Term Memory Networks"
+author: "Daniel Olofin"
+date: "2025-10-26"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readxl)
+library(readr)
+library(keras)
+library(tensorflow)
+
+```
+
+
+
+```{r}
+HiV_data <- read_xlsx("Hivdata.xlsx")
+```
+
+```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
+library(viridis)
+library(scales)
+library(tidyr)
+library(tidyverse)
+# Example data (replace this with your actual dataset)
+df <- HiV_data
+
+df <- df %>%
+  tidyr::fill(YEAR)
+
+# Summarize your data
+df_sum <- df %>%
+  group_by(YEAR) %>%
+  summarise(total = sum(prevalence, na.rm = TRUE))  # replace with your actual variable
+
+# Identify the year with the highest total
+max_year <- df_sum %>%
+  filter(total == max(total)) %>%
+  pull(YEAR)
+
+# Create the plot
+ggplot(df_sum, aes(x = factor(YEAR), y = total,
+                   fill = ifelse(YEAR == max_year, "Highest", "Other"))) +
+  geom_bar(stat = "identity", width = 0.7) +
+  geom_text(aes(label = round(total, 2)), vjust = -0.3, size = 3) +
+  scale_fill_manual(values = c("Highest" = "black", "Other" = "steelblue")) +
+  labs(
+  title = "Annual Aggregation of HIV Prevalence for Temporal Modeling (2010–2021)",
+  x = "Year",
+  y = NULL
+) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    legend.position = "none",
+    plot.title = element_text(face = "bold")
+  ) -> p
+
+
+df <- df %>%
+  tidyr::fill(YEAR) %>%                                   # fill down missing YEARs
+  mutate(
+    Month = str_trim(Month),                       # remove leading/trailing spaces
+    Month = str_to_upper(Month),                   # ensure all uppercase
+    Month_num = match(Month, toupper(month.abb)),  # map JAN→1, FEB→2, ...
+    date = make_date(YEAR, Month_num, 1)           # create full date
+  )
+
+
+# plot 
+p<- ggplot(df, aes(x = Month_num, y = prevalence, group = YEAR)) +
+  geom_line(color="blue") +
+  geom_point(color="red") +
+  facet_wrap(~ YEAR, ncol = 3, scales = "free_y") + 
+  theme_minimal(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1)) +
+
+ labs(
+  title = "Temporal Dynamics of Monthly HIV Prevalence (2010–2021)",
+  x = "Month",
+  y = "Prevalence"
+)
+
+
+ggsave(
+  filename = "HIV_Prevalence_Trajectory_2010_2021.png",
+  plot = p,
+  width = 8,        # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution (suitable for publication)
+)
+```
+
+```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
+ggplot(df, aes(x = date, y = prevalence)) +
+  geom_line(color = "blue") +
+geom_point(color="red") +
+  theme_minimal(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1)) +
+  labs(
+  title = "Temporal Trajectory of HIV Prevalence (2010–2021)",
+  x = "Date",
+  y = "Prevalence"
+)-> p
+
+ggsave(
+  filename = "HIV_Prevalence_Trajectory_2010_2021.png",
+  plot = p,
+  width = 8,        # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution (suitable for publication)
+)
+```
+
+
+# LSTM
+```{r}
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)
+  library(lubridate)
+  library(ggplot2)
+  library(keras)
+  library(tensorflow)
+  library(purrr)
+  library(abind)
+})
+
+# --- Reproducibility ---
+set.seed(123)
+tensorflow::tf$random$set_seed(123)
+
+# --- 0) Data: ensure date is Date and sorted monthly ---
+stopifnot(all(c("YEAR","Month","prevalence","Month_num","date") %in% names(df)))
+df <- df %>%
+  mutate(date = as.Date(date)) %>%
+  arrange(date)
+
+# Keep only modeling columns
+df <- df %>% select(date, prevalence)
+
+
+```
+
+
+```{r}
+# ================================================
+# LSTM for Monthly HIV Prevalence (R / keras)
+# Expects df with columns: YEAR, Month, prevalence, Month_num, date (YYYY-MM-DD)
+# ================================================
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(lubridate)
+  library(ggplot2)
+  library(purrr)
+  library(keras)
+  library(tensorflow)
+  library(abind)
+})
+
+# --- Reproducibility ---
+set.seed(123)
+tensorflow::tf$random$set_seed(123)
+
+# --- Ensure date column and sort ---
+df <- df %>%
+  mutate(date = as.Date(date)) %>%
+  arrange(date) %>%
+  select(date, prevalence)
+
+stopifnot(is.numeric(df$prevalence), inherits(df$date, "Date"))
+
+
+```
+
+
+## Create Differenced Series - Differencing helps to make the time series stationary — good for LSTM training.
+```{r}
+# Anchor the original (level) series once
+Series <- as.numeric(df$prevalence)
+
+
+# Difference the prevalence
+diffed <- diff(df$prevalence, differences = 1)
+
+
+# Replace NA with 0 for first differenced value 
+diffed <- c(0, diffed)
+
+```
+
+
+## Apply Your Lag Function
+```{r}
+lag_transform <- function(x, k = 1) {
+  lagged = c(rep(NA, k), x[1:(length(x) - k)])
+  DF = as.data.frame(cbind(lagged, x))
+  colnames(DF) <- c(paste0("x-", k), "x")
+  DF[is.na(DF)] <- 0
+  return(DF)
+}
+
+
+supervised <- lag_transform(diffed, 1)
+head(supervised)
+
+
+```
+
+
+## Split Dataset into Training & Testing Sets (70/30 Time-Series Split)
+
+```{r}
+## Split into train and test sets for time series
+
+N <- nrow(supervised)              # Total observations
+n <- round(N * 0.70, digits = 0)   # 70% split point
+
+train <- supervised[1:n, ]         # First 70% as training
+test  <- supervised[(n+1):N, ]     # Remaining 30% as testing
+
+
+```
+
+Unlike traditional machine learning where data can be randomly partitioned, time-series forecasting requires maintaining the temporal order of observations. Therefore, the first 70% of the lagged dataset was used for model training, while the remaining 30% was reserved for evaluating the LSTM forecast performance. This approach ensures that the model is trained on past values and tested only on future values, preventing data leakage and preserving the causal structure of the time series.
+
+
+
+## Normalize the Data for LSTM
+```{r}
+## Function to scale data to desired feature range
+scale_data <- function(train, test, feature_range = c(-1, 1)) {
+  
+  train_min <- min(train)
+  train_max <- max(train)
+  
+  # Scale train & test using training min/max ONLY
+  scaled_train <- ((train - train_min) / (train_max - train_min)) * 
+                  (feature_range[2] - feature_range[1]) + feature_range[1]
+                  
+  scaled_test <- ((test - train_min) / (train_max - train_min)) * 
+                 (feature_range[2] - feature_range[1]) + feature_range[1]
+  
+  # Return scaled sets and scaler values
+  return(list(
+    scaled_train = scaled_train,
+    scaled_test  = scaled_test,
+    scaler       = c(min = train_min, max = train_max)
+  ))
+}
+
+## Apply scaling
+Scaled <- scale_data(train, test, c(-1, 1))
+
+# Extract scaled train & test values
+x_train <- Scaled$scaled_train[,1]   # lagged values
+y_train <- Scaled$scaled_train[,2]   # current values
+
+x_test  <- Scaled$scaled_test[,1]
+y_test  <- Scaled$scaled_test[,2]
+
+```
+
+
+LSTM models require scaling the data to a small numeric range. Since the sigmoid/tanh activation functions typically perform best within −1 to 1, we scale both training and testing sets to that range using only the training data min-max values. This avoids data leakage
+
+
+## Correct Inverse-Scaling Function (Matching your [-1,1] scaling)
+
+```{r}
+## inverse transform function (scale back to original units)
+invert_scaling <- function(scaled, scaler, feature_range = c(-1, 1)){
+  
+  min_val <- scaler[1]
+  max_val <- scaler[2]
+  
+  ## unpack feature range
+  fr_min <- feature_range[1]
+  fr_max <- feature_range[2]
+  
+  # reverse scaling
+  inverted <- (((scaled - fr_min) / (fr_max - fr_min)) * 
+                (max_val - min_val)) + min_val
+  
+  return(inverted)
+}
+
+
+```
+
+
+## Model
+
+```{r}
+# =========================
+# Reshape to 3D [samples, timesteps, features]
+# =========================
+dim(x_train) <- c(length(x_train), 1, 1)
+dim(x_test)  <- c(length(x_test),  1, 1)
+
+X_shape2 <- dim(x_train)[2]   # timesteps = 1
+X_shape3 <- dim(x_train)[3]   # features  = 1
+batch_size <- 1               # must divide #samples; 1 is always safe
+units <- 8                    # hidden size (tune as needed)
+
+# =========================
+# Build model (stateful LSTM)
+# =========================
+model <- keras_model_sequential() %>%
+  layer_lstm(units,
+             batch_input_shape = c(batch_size, X_shape2, X_shape3),
+             stateful = TRUE,
+             return_sequences = FALSE) %>%
+  layer_dense(units = 1)
+
+```
+
+
+### compile
+```{r}
+model %>% compile(
+  loss = "mse",
+  optimizer = optimizer_adam(learning_rate = 0.001),
+  metrics = c("mae")
+)
+
+summary(model)
+```
+
+
+
+### Fit the model
+
+```{r}
+epochs <- 50
+
+for (e in 1:epochs) {
+  model %>% fit(
+    x = x_train, y = y_train,
+    batch_size = batch_size,
+    epochs = 1,
+    shuffle = FALSE,
+    verbose = 0
+  )
+  model %>% reset_states()
+  if (e %% 10 == 0) cat("Epoch", e, "complete\n")
+}
+
+```
+
+```{r}
+# =========================
+# Predict (train & test)
+# =========================
+train_pred_scaled <- model %>% predict(x_train, batch_size = batch_size)
+model %>% reset_states()
+test_pred_scaled  <- model %>% predict(x_test,  batch_size = batch_size)
+
+# =========================
+# Invert scaling to original units
+# (We used feature_range = c(-1, 1) earlier)
+# =========================
+inv_scale <- function(z_scaled, scaler, feature_range = c(-1, 1)) {
+  fr_min <- feature_range[1]; fr_max <- feature_range[2]
+  train_min <- scaler["min"]; train_max <- scaler["max"]
+  ((z_scaled - fr_min) / (fr_max - fr_min)) * (train_max - train_min) + train_min
+}
+
+y_train_hat <- inv_scale(train_pred_scaled[,1], Scaled$scaler, c(-1, 1))
+y_test_hat  <- inv_scale(test_pred_scaled[,1],  Scaled$scaler, c(-1, 1))
+
+y_train_true <- inv_scale(y_train, Scaled$scaler, c(-1, 1))
+y_test_true  <- inv_scale(y_test,  Scaled$scaler, c(-1, 1))
+
+```
+
+```{r}
+# =========================
+# Evaluate
+# =========================
+rmse <- function(a, b) sqrt(mean((a - b)^2))
+mae  <- function(a, b) mean(abs(a - b))
+
+cat(sprintf("Train RMSE: %.4f | MAE: %.4f\n",
+            rmse(y_train_true, y_train_hat),
+            mae(y_train_true,  y_train_hat)))
+cat(sprintf("Test  RMSE: %.4f | MAE: %.4f\n",
+            rmse(y_test_true,  y_test_hat),
+            mae(y_test_true,   y_test_hat)))
+
+```
+
+
+```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
+# =========================
+# Quick plots
+# =========================
+op <- par(mfrow = c(1,2))
+plot(y_train_true, type = "l", main = "Train: True vs Pred",
+     xlab = "Index", ylab = "Value")
+lines(y_train_hat, col = 2)
+legend("topleft", c("True","Pred"), lty = 1, col = c(1,2), bty = "n")
+
+plot(y_test_true, type = "l", main = "Test: True vs Pred",
+     xlab = "Index", ylab = "Value")
+lines(y_test_hat, col = 2)
+legend("topleft", c("True","Pred"), lty = 1, col = c(1,2), bty = "n")
+par(op)
+
+
+
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork) # for combining plots
+
+# ---- Prepare training dataframe ----
+df_train <- data.frame(
+  Index = 1:length(y_train_true),
+  Actual = y_train_true,
+  Predicted = y_train_hat
+) %>%
+  pivot_longer(cols = c(Actual, Predicted), names_to = "Series", values_to = "Value")
+
+p1 <- ggplot(df_train, aes(x = Index, y = Value, color = Series)) +
+  geom_line(size = 0.5) +
+  labs(
+    title = "Train: Actual vs Predicted",
+    x = "Index", y = "Prevalence"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red")) +
+  theme_minimal() +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# ---- Prepare testing dataframe ----
+df_test <- data.frame(
+  Index = 1:length(y_test_true),
+  Actual = y_test_true,
+  Predicted = y_test_hat
+) %>%
+  pivot_longer(cols = c(Actual, Predicted), names_to = "Series", values_to = "Value")
+
+p2 <- ggplot(df_test, aes(x = Index, y = Value, color = Series)) +
+  geom_line(size = 0.5) +
+  labs(
+    title = "Test: Actual vs Predicted",
+    x = "Index", y = "Prevalence"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red")) +
+  theme_minimal() +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# ---- Combine side-by-side ----
+p1 + p2
+
+
+# Combine the two plots side by side
+combined_plot <- p1 + p2
+
+# Save as PNG
+ggsave(
+  filename = "HIV_Actual_vs_Predicted_Comparison.png",
+  plot = combined_plot,
+  width = 10,       # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution (suitable for publication)
+)
+```
+
+```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
+invert_scaling <- function(z_scaled, scaler, feature_range = c(-1, 1)) {
+  fr_min <- feature_range[1]
+  fr_max <- feature_range[2]
+  train_min <- scaler["min"]
+  train_max <- scaler["max"]
+  
+  ((z_scaled - fr_min) / (fr_max - fr_min)) * (train_max - train_min) + train_min
+}
+
+
+
+
+L <- length(x_test)
+scaler <- Scaled$scaler
+predictions <- numeric(L)
+
+model %>% reset_states()
+
+for(i in 1:L){
+  X <- x_test[i]              # 1-step input
+  dim(X) <- c(1,1,1)          # [samples, timestep, features]
+  
+  yhat_scaled <- model %>% predict(X, batch_size = batch_size)
+  
+  # invert scaling
+  yhat <- invert_scaling(yhat_scaled, scaler, c(-1, 1))
+  
+  # invert differencing: add previous actual value
+  yhat <- yhat + Series[n + i]
+  
+  predictions[i] <- yhat
+}
+
+actual_test <- Series[(n + 2):(n + L + 1)]
+# Quick plot on original scale
+
+# Quick plot on original scale
+plot(actual_test, type="l", main="Test: Actual vs Reconstructed Forecast (Level)",
+     xlab="Test Index", ylab="Prevalence")
+lines(predictions, col=2)
+legend("topleft", c("Actual","Forecast"), lty=1, col=c(1,2), bty="n")
+
+
+# Ensure actual & predicted have same length
+df_plot <- data.frame(
+  Index = 1:length(actual_test),
+  Actual = actual_test,
+  Forecast = predictions
+) %>% 
+  tidyr::pivot_longer(cols = c(Actual, Forecast), names_to = "Series", values_to = "Value")
+
+ggplot(df_plot, aes(x = Index, y = Value, color = Series)) +
+  geom_line(size = 0.5) +
+  labs(
+    title = "LSTM Forecast vs Actual (Test Set)",
+    subtitle = "Reconstructed HIV Prevalence on Original Scale",
+    x = "Time Index (Test Period)",
+    y = "Prevalence"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(face="bold")
+  ) -> p
+
+ggsave(
+  filename = "HIV_Prevalence_Trajectory_2010_2021.png",
+  plot = p,
+  width = 8,        # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution (suitable for publication)
+)
+
+```
+
+
+```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
+# install.packages("DiagrammeR")  # if needed
+library(DiagrammeR)
+
+grViz("
+digraph LSTMFlow {
+  graph [rankdir=LR, fontsize=10, labelloc=t, labeljust=l]
+  node  [shape=rectangle, style=filled, fillcolor=lightgrey, color=grey25, fontname=Helvetica, fontsize=10]
+  edge  [color=grey35, arrowsize=0.7]
+
+  A [label='Load data (xlsx) → df']
+  B [label='Clean & tidy\\nfill(YEAR), Month→Month_num, date']
+  C [label='Sort by date\\nselect(date, prevalence)']
+  D [label='Difference series\\nprevalence → diffed (first NA→0)']
+  E [label='Lag transform → supervised\\n(x-1, x)']
+  F [label='Time-ordered split\\n70% train / 30% test']
+  G [label='Scale to [-1,1]\\n(train min/max only)']
+  H [label='Reshape to 3D\\n[samples, timesteps=1, features=1]']
+  I [label='Build LSTM (stateful) + Dense(1)']
+  J [label='Train (epochs loop)\\nshuffle=FALSE; reset_states()']
+  K [label='Predict (scaled)\\ntrain & test']
+  L [label='Invert scaling\\n→ original diff units']
+  M [label='Invert differencing\\nŶ_level = Ŷ_diff + previous actual']
+  N [label='Evaluate: RMSE/MAE']
+  O [label='Visualize: lines\\nTrain/Test (ggplot)']
+
+  A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O
+
+  subgraph cluster_notes {
+    label='Guards'
+    style=dashed
+    color=grey60
+    G1 [label='No leakage:\\nuse train min/max', fillcolor=white]
+    M1 [label='Use Series[n+i]\\nwhen reconstructing test', fillcolor=white]
+  }
+  G -> G1 [style=dashed]
+  M -> M1 [style=dashed]
+}
+")
+
+```
+
+**Fig. 1: Data preprocessing pipeline (flowchart)**
