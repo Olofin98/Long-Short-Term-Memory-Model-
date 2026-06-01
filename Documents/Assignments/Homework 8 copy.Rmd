@@ -1,0 +1,120 @@
+---
+title: "Assigment 8"
+author: "Moshood Abiola"
+date: "2025-09-22"
+output:
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: true
+fontsize: 11pt
+geometry: margin=1in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1) This problem will step you through making a prediction using more than one predictor variable
+
+### a) Modify Example 8.7 (continued) to predict the price of a car with 200 horsepower, a weight of 2705, and a length of 177. Use **k = 3**. You should get 19.533.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(MASS)    
+library(caret)   
+
+# Keep only complete cases of predictors and response
+car_data <- subset(Cars93, select = c(Price, Horsepower, Weight, Length))
+car_data <- na.omit(car_data)
+
+# Query observation
+query_pt <- data.frame(Horsepower = 200, Weight = 2705, Length = 177)
+
+# 1a) KNN regression on raw features
+set.seed(123)
+knn_raw <- knnreg(Price ~ Horsepower + Weight + Length, data = car_data, k = 3)
+pred_raw_knn <- predict(knn_raw, query_pt)
+pred_raw_knn
+```
+
+### b.) Unfortunately this isn’t what I obtained when I tested it with my homemade code. I wondered if this is because knnreg() isn’t standardizing the predictor variables, so I tested it this way: I made a subset of the Cars93 dataset only containing the predictor variables, scaled it and turned it back into a data frame, then added the Price variable. I fit a model used this scaled dataset. Then I scaled the observation I wanted to predict for by the predictor variables and coerced it to a data fame, and finally made a prediction. It was 17.4. Obtain this same prediction.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# 1b) Standardize predictors (center + scale), then KNN
+X_train <- car_data[, c("Horsepower","Weight","Length")]
+
+scaler <- preProcess(X_train, method = c("center","scale"))
+
+X_train_scaled <- predict(scaler, X_train)
+car_data_scaled <- data.frame(X_train_scaled, Price = car_data$Price)
+
+set.seed(123)
+knn_scaled <- knnreg(Price ~ ., data = car_data_scaled, k = 3)
+
+query_scaled <- predict(scaler, query_pt)
+pred_scaled_knn <- predict(knn_scaled, query_scaled)
+pred_scaled_knn              
+```
+
+
+### 2.) (Grad student only) Write a function that implements Algorithm 8.6. Use it to solve problem 1) and ensure your answer is the same as in 1b).
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+manual_knn <- function(X, y, x_new, k = 3, scale_it = FALSE) {
+  stopifnot(nrow(X) == length(y),
+            ncol(X) == ncol(x_new),
+            k >= 1, k <= nrow(X))
+  
+  X_mat <- as.matrix(X)
+  q_mat <- as.matrix(x_new)
+  
+  if (scale_it) {
+    mu_vals <- colMeans(X_mat)
+    sd_vals <- apply(X_mat, 2, sd)
+    sd_vals[sd_vals == 0] <- 1
+    X_mat <- scale(X_mat, center = mu_vals, scale = sd_vals)
+    q_mat <- scale(q_mat,  center = mu_vals, scale = sd_vals)
+  }
+  
+  # Euclidean distances
+  dist_vec <- sqrt(rowSums((X_mat - matrix(q_mat, nrow(X_mat), ncol(X_mat), byrow = TRUE))^2))
+  
+  # k nearest indices
+  nearest_idx <- order(dist_vec)[1:k]
+  
+  # Mean of target values
+  mean(y[nearest_idx])
+}
+
+```
+
+
+#### Reproduce 1a with manual KNN (no standardization)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pred_raw_manual <- manual_knn(
+  X = car_data[, c("Horsepower","Weight","Length")],
+  y = car_data$Price,
+  x_new = query_pt,
+  k = 3,
+  scale_it = FALSE
+)
+pred_raw_manual 
+```
+
+
+#### Reproduce 1b with manual KNN (with standardization)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pred_scaled_manual <- manual_knn(
+  X = car_data[, c("Horsepower","Weight","Length")],
+  y = car_data$Price,
+  x_new = query_pt,
+  k = 3,
+  scale_it = TRUE
+)
+pred_scaled_manual 
+
+```
+

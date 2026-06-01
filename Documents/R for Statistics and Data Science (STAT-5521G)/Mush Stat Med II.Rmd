@@ -1,0 +1,63 @@
+---
+title: "Statistics Method II Assignment"
+author: "Moshood A Garuba"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question one:
+
+## Codes:
+```{r}
+#Data Importation
+mydata <- read.csv("~/R for Statistics and Data Science (STAT-5521G)/Stat_meth.txt", sep="")
+
+#Linear Regression Model
+lm_mdel<-lm(Minutes~Copiers, data = mydata)
+
+#Summary of the LM result
+summary(lm_mdel) -> summary_mdel
+summary_mdel
+```
+
+## (a.)  What is the dependent variable in this case;
+The dependent variable is: **total number of minutes**.
+
+## (b.) What is the independent variable in this case;
+The independent variable is: **number of copiers serviced**.
+
+## (c.) Show what is the theoretical simple linear regression model;
+
+ $$ Y = \beta_0 + \beta_1 X + \epsilon$$
+
+where:
+
+- \( Y \) = Total service time (minutes) (**dependent variable**),
+- \( X \) = Number of copiers serviced (**independent variable**),
+- \( \beta_0 \) = Intercept (baseline service time when no copiers are serviced),
+- \( \beta_1 \) = Slope (additional time required per copier).
+
+## (d.) Can you provide a least squares estimator for the parameter value \( \beta_1 \);
+
+\( \beta_1 \) = `r summary_mdel$coefficients[2]`
+
+## (e.) Can you provide a least squares estimator for the parameter value;
+
+\( \beta_0 \) = `r summary_mdel$coefficients[1]`
+
+## (f.) Show what is the fitted linear regression model;
+
+  Total  service  time (minutes) = `r summary_mdel$coefficients[1]` + `r summary_mdel$coefficients[2]` (Number of copiers serviced) 
+ 
+## (g.) Can you provide an interpretation for the slope \( \beta_1 \);
+ 
+For one unit increase in number of copiers serviced, will lead to increase in the total serviced time on average by `r summary_mdel$coefficients[2]`. 
+ 
+ 
+## (h.) Can you provide an interpretation for the intercept \( \beta_0 \):
+ 
+ On average the total serviced time is `r summary_mdel$coefficients[1]` whenever the number of copiers serviced is 0.

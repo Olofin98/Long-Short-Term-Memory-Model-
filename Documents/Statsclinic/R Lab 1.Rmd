@@ -1,0 +1,451 @@
+---
+title: "Stats101 R Lab 1: Introduction to R"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+
+# Introduction to R 
+
+## Introduction 
+
+We will start by installing R and RStudio, then covering some basics.
+
+We will introduce you to preparing your data for analysis (data management), the basics of data analysis, the basics of data visualization. This course will be a quick breeze. We will share resources you can explore to help you strengthen your programming in R.
+
+
+
+### Installing R
+
+The first step is to install R. You can download and install R from
+the [Comprehensive R Archive Network](https://cran.r-project.org/)
+(CRAN). It is relatively straightforward, but if you need further help
+you can try the following resources: 
+
+* [Installing R on Windows](https://github.com/genomicsclass/windows#installing-r) 
+* [Installing R on Mac](http://youtu.be/Icawuhf0Yqo)
+* [Installing R on Ubuntu](http://cran.r-project.org/bin/linux/ubuntu/README)
+
+### Installing RStudio
+
+The next step is to install RStudio, a program for viewing and running R scripts. Technically you can run all the code shown here without installing RStudio, but we highly recommend this integrated
+development environment (IDE). Instructions are
+[here](http://www.rstudio.com/products/rstudio/download/) and for
+Windows we have special
+[instructions](https://github.com/genomicsclass/windows). 
+
+### The Console
+
+Now that you have download and installed R you are ready to start working with data. Whichever approach you are using to interact with R, we recommend RStudio, you should identify the console. 
+
+![the console](console_screen_shot.png)
+
+When you type a line of code into the console and hit enter the command gets _executed_. For example, try typing
+
+```{r}
+2+3
+```
+
+We can also assign values to variables. Try the following
+
+```{r}
+x <- 2
+y <- 3
+x + y
+```
+
+
+########################################
+# Objects and Basic Operations
+########################################
+
+### Basic Math Operations
+```{r}
+33+7
+33-7
+33*7
+33/7
+sqrt(33)
+log(33)
+exp(33)
+```
+
+#### assign values to variables
+```{r}
+x <- 33
+y <- 7
+x + y
+```
+
+
+```{r}
+# if you try to use a variable that is not in the workspace, you will get an error
+x <- 33
+x
+```
+
+#### view the objects in the workspace
+```{r}
+ls()
+```
+
+
+#### delete a variable from the workspace
+```{r}
+rm(x)
+```
+
+
+
+
+#### Vectors
+A vector stores elements of the same type. Think of a column in excel, or a variable in SPSS or Stata.
+```{r}
+vector1 <- c(26, 7, 4, 5, 8)
+vector2 <- c(1, 3, y)
+vector3 <- c(vector1, vector2)
+vector1
+vector2
+vector3
+```
+
+#### Lists
+A list in R is an object that contains elements of different types inside. A list can contain numbers, strings/characters, or even vectors. A list can also contain another list.
+```{r}
+list_data <- list("Red", "Green", c(21,32,11), TRUE, 51.23, 119.1)
+print(list_data)
+```
+
+```{r}
+# Create two lists.
+list1 <- list(1,2,3)
+list2 <- list("Sun","Mon","Tue")
+
+# Merge the two lists.
+merged.list <- c(list1,list2)
+
+# Print the merged list.
+print(merged.list)
+```
+
+
+#### Factor
+Think of a factor as a categorical variable. The factor function can also be used to create levels of the variable.
+```{r}
+sex <- factor(c("male", "female", "female", "male"))
+
+#You can ask R, what the levels are in the sex variable,
+levels(sex)
+
+#You can also ask R how many levels there are
+nlevels(sex)
+```
+
+#### Dataframe
+A dataframe in R is a dataset. You can use the data.frame function to create a dataframe from a list or a table. It makes it easier to manipulate in many cases.
+```{r}
+L3 <- LETTERS[1:3]
+fac <- sample(L3, 10, replace = TRUE)
+d <- data.frame(x = 1, y = 1:10, fac = fac)
+
+age <- c(1,2,3,4,5)
+height <- c(50,51,52,53,54)
+sex <- c("M","M","M","F","F")
+
+stud_info <- data.frame(age,height,sex)
+
+stud_info[c(2:3)]
+```
+
+You can manipulate a dataframe in many ways. You can merge or join one dataframe to another one, often based on unique variable(s) that they both possess. You can subset a variable
+
+
+
+# The R ecosystem
+
+When you download R from CRAN you get what we call _base_ R. This includes several _functions_ that are considered fundamental for data analysis. It also includes several example datasets. These datasets are particularly useful as examples when we are learning to use the available functions. You can see all the available datasets by executing the function `data` like this:
+
+```{r,eval=FALSE}
+data()
+```
+
+Because in R functions are objects, we need the two parenthesis to let R know that we want the function to be executed as opposed to showing us the code for the function. Type the following and note the difference:
+
+```{r,eval=FALSE}
+data
+iris
+```
+
+
+To see example of functions at work, we will use the `co2` dataset to illustrate the function `plot`, one of the base functions. We can plot Mauna Loa Atmospheric CO2 Concentration versus data like this:
+
+```{r}
+plot(co2)
+
+data("co2")
+
+co2
+```
+
+
+
+
+
+
+
+
+Note that R's base functionality is bare bones. Data science applications are broad, the statistical toolbox is extensive, and most users need only a small fraction of all the available functionality. Therefore, a better approach is to make specific functionality available _on demand_.  R does this using _packages_, also called _libraries_. 
+
+Some packages are considered popular enough that they are included with the base download.
+For example, the software implementing the method of survival analysis are in the `survival` package. To bring that functionality to your current session we type
+
+```{r,eval=FALSE}
+library(survival)
+
+# install.packages("tidyverse")
+
+library(tidyverse)
+```
+
+However, CRAN has over 4,000 packages that are not included in the base installation. You can install these using the `install.packages` function. 
+
+
+
+## Getting help
+
+A key feature you need to know about R is that you can get help for a function using `help` or `?`, like this:
+```{r,eval=FALSE}
+?install.packages
+help("install.packages")
+
+## sample()
+```
+
+These pages are quite detailed and also include examples at the end. 
+
+## Comments
+The hash character represents comments, so text following these
+characters is not interpreted:
+
+```{r}
+##This is just a comment
+```
+
+
+## Markdown
+
+Markdown is a simplified version of 'markup' languages. Unlike cumbersome word processing applications, text written in Markdown uses simple and intuitve formatting elements and can be easily shared between computers, mobile phones, and people. It's quickly becoming the writing standard for academics, scientists, writers, and many more. Websites like GitHub and reddit use Markdown to style their comments.
+
+Formatting text in Markdown has a very gentle learning curve. It doesn't do anything fancy like change the font size, color, or type - just the essentials, using keyboard symbols you already know. All you have control over is the display of the text-stuff like making things bold, creating headers, and organizing lists.
+
+We won't go into a lot of detail, but run through a few basic examples. For more details and examples, click [here](https://www.markdowntutorial.com/).
+
+
+
+### Headers
+
+Headers are frequently used on websites, magazine articles, and notices, to draw attention to a section. As their name implies, they act like titles or subtitles above sections.
+
+There are six types of headers, in decreasing sizes:
+
+# Header one
+## Header two
+### Header three
+#### Header four
+##### Header five
+###### Header six
+
+To make headers in Markdown, you preface the phrase with a hash mark (`#`). You place the same number of hash marks as the size of the header you want. For example, for a header one, you'd use one hash mark (`# Header One`), while for a header three, you'd use three (`### Header Three`). It's up to you to decide when it's appropriate to use which header. In general, headers one and six should be used sparingly.
+
+
+## knitr
+
+`knitr` is an R package that is used for _statistical literate programming_, meaning you are able to integrate code and text in a single, simple document format. It supports `R Markdown`, `R LaTex`, and `R HTML` as documentation languages, and can export `markdown`, `PDF` and `HTML` documents.
+
+Something that is really nice about using `R Markdown` with `knitr` is that your final document will not be created if there is an error in your code. Thus, it's really easy to check if your code is running by simply `knitting` the `.Rmd` file.
+
+Make sure to install the latest version of the `knitr` package: `install.packages("knitr")`.
+
+## rmarkdown
+
+Documents, like this one, containing both R code (below) and markdown are `R Markdown` files. The similarly named `rmarkdown` is an R package that makes working with `R Markdown` easier by wrapping `knitr` along with other tools. For more details on both the `R Markdown` format and the `rmarkdown` package, see <http://rmarkdown.rstudio.com>.
+
+When you run `render` from the `rmarkdown` package (or click the **Knit** button above), the `.Rmd` file is fed to `knitr`, which executes all of the code chunks and creates a new markdown (`.md`) document which includes the code and it's output.
+
+The markdown file generated by `knitr` is then processed by pandoc which is responsible for creating the finished format.
+
+![](http://rmarkdown.rstudio.com/lesson-images/RMarkdownFlow.png)
+
+### Embedding Code
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R 'code chunks' within the document. 
+
+#### Code Chunks
+
+There are 3 ways to create a code chunk:  
+
+1. Typing `` ```{r} `` to start a code chunk and then ` ``` ` to end a code chunk  
+2. The keyboard shortcut **Ctrl + Alt + I** (OS X: **Cmd + Option + I**)  
+3. Clicking the Add Chunk button in the tool bar
+
+
+Let's start with the built-in data set `pressure`, which includes data on the vapor pressure of Mercury as a function of temperature. You can embed an R code chunk like this:
+
+```{r}
+head(pressure)
+summary(pressure)
+```
+
+Note that both the code written and output produced are shown in the final document. 
+
+
+
+## Installing Packages
+
+R only includes a basic set of functions. It can do much more than this, but not everybody needs everything so we instead make some functions available via packages. Many of these functions are stored in CRAN where packages are vetted and maintained by a dedicated individual/group. There are other repositories, such as [Bioconductor](http://www.bioconductor.org), or GitHub. 
+
+You can easily install CRAN packages from within R if you know the name of the packages. As an example, we are going to install the package `dplyr` which we often use in data management. 
+
+```{r,eval=FALSE}
+install.packages("dplyr")
+```
+
+We can then load the package into our R sessions using the `library` function:
+
+```{r, warning=FALSE}
+library(dplyr)
+```
+
+From now on you will see that we sometimes load packages without installing them. This is because once you install the package, it
+remains in place and only needs to be loaded with `library`. If you try to load a package and get an error, it probably means you need to install it first.
+
+
+
+## Importing Data into R
+
+You often need to first read your data into R. We therefore teach this skill first. There are several ways to do this and we will discuss three of them. But you only need to learn one to follow along. 
+
+We will start with a simple example dataset containing the [heights of students in our class](https://raw.githubusercontent.com/datasciencelabs/data/master/bio260-heights.csv)
+
+The first step is to find the file containing your data and know its *path*. 
+
+
+#### Paths and the Working Directory
+
+When you are working in R it is useful to know your _working directory_. This is the directory or folder in which R will save or look for files by default. You can see your working directory by typing:
+
+```{r, eval=FALSE}
+getwd()
+```
+
+You can also change your working directory using the function `setwd`. Or you can change it through RStudio by clicking on "Session". 
+```{r}
+setwd("/Users/olofindo/Documents/Statsclinic")
+```
+
+If you have an Excel csv file, you could import it into R 
+```{r}
+library(readr)
+library(readxl)
+
+my_data <- read_csv("residentdoctors.csv")
+
+df <- read_xlsx("residentdoctors.xlsx")
+
+
+head_df<- head(my_data)
+
+write_sav(head_df, "new_data.sav")
+
+```
+
+If you have a SPSS file, you could import it into R
+```{r}
+
+library(haven)
+
+dat <- read_sav("residentdoctors.sav")
+
+```
+
+You could also create an SPSS file from your R data. Same applies for other formats.
+```{r}
+library(haven)
+write_sav(dat, "spssdata.sav")  #you can do this because you have already set a working directory 
+```
+
+Same dataset in Excel CSV
+```{r}
+library(haven)
+write_csv(dat, "spssdata.csv")  #you can do this because you have already set a working directory 
+```
+
+
+## Resources
+
+Apart from the two courses lister above, there are many resources to help you 
+familiarize yourself with the basics of programming and R syntax.  One such tutorial is the [swirl](http://swirlstats.com/) tutorial, which teaches you R programming interactively, at your own pace and in the R console. Once you have R installed, you can install `swirl` and run it the following way: 
+
+```{r, eval=FALSE}
+install.packages("swirl")
+library(swirl)
+swirl()
+
+head_df
+```
+
+[try R](http://tryr.codeschool.com/) interactive class from Code School. 
+
+There are also many open and free resources and reference
+guides for R. Two examples are:
+
+* [Quick-R](http://www.statmethods.net/): a quick online reference for data input, basic statistics and plots
+* R reference card (PDF)[https://cran.r-project.org/doc/contrib/Short-refcard.pdf] by Tom Short 
+
+#### Resources - from simple to advanced R Resources (from Roger Peng)
+
+
+* DataCamp's [R course](https://www.datacamp.com/courses/free-introduction-to-r)
+* edX's [Introduction to R Programming](https://www.edx.org/course/introduction-r-programming-microsoft-dat204x-0)
+
+Available from CRAN (http://cran.r-project.org)
+
+-   An Introduction to R
+
+-   Writing R Extensions
+
+-   R Data Import/Export
+
+-   R Installation and Administration (mostly for building R from
+    sources)
+
+-   R Internals (not for the faint of heart)
+
+
+#### Some Useful Books on S/R
+
+Standard texts
+
+-   Chambers (2008). *Software for Data Analysis*, Springer. (your
+    textbook)
+
+-   Chambers (1998). *Programming with Data*, Springer.
+
+-   Venables & Ripley (2002). *Modern Applied Statistics with S*,
+    Springer.
+
+-   Venables & Ripley (2000). *S Programming*, Springer.
+
+-   Pinheiro & Bates (2000). *Mixed-Effects Models in S and S-PLUS*,
+    Springer.
+
+-   Murrell (2005). *R Graphics*, Chapman & Hall/CRC Press.
+
+Other resources
+
+-   Springer has a series of books called *Use R!*.
+
+-   A longer list of books is at
+    http://www.r-project.org/doc/bib/R-books.html

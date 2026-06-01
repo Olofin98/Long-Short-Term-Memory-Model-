@@ -1,0 +1,157 @@
+---
+title: "Homework 5"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question One
+In the examples you saw the built-in function scale(), which accepts a numeric matrix, and centers and scales each column. Specifically, each entry has the mean of its column subtracted, and is then divided by the standard deviation of that column. You may know this as finding a z-score or standardized score. It is often useful to apply the same centering and scaling to a row vector that is not part of the original matrix (such as making a supervised learning prediction when the model is trained on standardized data).
+
+- (a).
+Create a function named scale_by that accepts a 1 × 𝑝 row vector and an 𝑛 × 𝑝 matrix. From each entry in the vector, it should subtract the mean of the corresponding column mean of the matrix and divide by the corresponding column standard deviation of the matrix. Basically, it’s scaling the vector by the matrix instead of itself.
+
+```{r}
+scale_by <- function(row_vector, matrix_data) {
+  # Compute column means and standard deviations of the matrix
+  col_means <- colMeans(matrix_data)  # Mean of each column
+  col_sds <- apply(matrix_data, 2, sd)  # Standard deviation of each column
+  
+  # Scale the row vector using the matrix statistics
+  scaled_vector <- (row_vector - col_means) / col_sds
+  
+  return(scaled_vector)
+}
+
+
+# Example usage
+row_vector <- matrix(c(-1, -5, 3), nrow = 1)  # 1×p row vector
+matrix_data <- matrix(c(-6, 6, 3, 5, 7, -2, -1, -10, 0, -8, 2, 4), 
+                      ncol = 3, byrow = TRUE)  # n×p matrix
+
+scaled_vector <- scale_by(row_vector, matrix_data)
+print(scaled_vector)
+```
+- (b)
+Grad student only) Extend the function you wrote in part a) so that it works not only for a row vector, but for every row of a 𝑚 × 𝑝 matrix. Hint: My solution has five lines in the interior of the function, and uses the sweep() function in addition to the previous ones. Here is an example to check your work
+
+```{r}
+scale_by <- function(matrix_to_scale, reference_matrix) {
+  # Compute column means and standard deviations of the reference matrix
+  col_means <- colMeans(reference_matrix)  # Mean of each column
+  col_sds <- apply(reference_matrix, 2, sd)  # Standard deviation of each column
+  
+  # Scale the matrix using the reference matrix statistics
+  scaled_matrix <- sweep(matrix_to_scale, 2, col_means, "-")  # Subtract column means
+  scaled_matrix <- sweep(scaled_matrix, 2, col_sds, "/")  # Divide by column standard deviations
+  
+  return(scaled_matrix)
+}
+
+# Example usage
+matrix_to_scale <- matrix(c(2, -3, -2, 5, 3, -1), nrow = 2, byrow = TRUE)  # m×p matrix
+reference_matrix <- matrix(c(-6, 6, 3, 5, 7, -2, -1, -10, 0, -8, 2, 4), ncol = 3, byrow = TRUE)  # n×p matrix
+
+
+scaled_matrix <- scale_by(matrix_to_scale ,reference_matrix)
+print(scaled_matrix)
+```
+
+# Question Two
+
+Create an infix function named %count_in% that accepts a numeric vector of length 1 (that is, an ordinary number) as the first argument and a numeric vector of arbitrary length as the second argument. The value it returns should be how many times the first argument appears in the second argument.
+
+```{r}
+`%count_in%` <- function(num, vec) {
+  sum(vec == num)  # Count occurrences of num in vec
+}
+
+# Example usage
+num <- 5
+vec <- c(5, 6, 3, 4, 3, 5, 6, 5, 6, 3)
+
+# Test the function
+result <- num %count_in% vec
+print(result) 
+```
+
+# Question Three:
+Use the command library(help = package) to find a function from one of the standard packages included in R that we haven’t yet covered in this course. Write a paragraph explaining how the function works, and provide an example not included in the documentation.
+
+```{r}
+library(help = stats)
+```
+
+`smooth.spline()` is used for smoothing noisy data using a spline-based approach. It fits a smooth curve through a set of noisy observations by minimizing a penalized sum of squares, effectively controlling the trade-off between fitting the data closely and maintaining smoothness. The smoothing is controlled by either degrees of freedom (df) or a smoothing parameter (spar).
+
+Example (Not in Documentation):
+```{r}
+# Load necessary library
+library(ggplot2)
+
+# Simulate longitudinal biomarker data (e.g., blood glucose levels)
+set.seed(42)
+time_points <- seq(0, 12, length.out = 100)  # 12 months of observation
+glucose_levels <- 100 + 5 * sin(time_points) + rnorm(100, mean = 0, sd = 3)  # Add noise
+
+# Fit smooth spline
+spline_fit <- smooth.spline(time_points, glucose_levels, spar = 0.5)  # Adjust spar for smoothing
+
+# Convert to data frame for visualization
+df <- data.frame(Time = time_points, Glucose = glucose_levels, 
+                 Smoothed_Glucose = predict(spline_fit, time_points)$y)
+
+# Plot original glucose levels and smoothed trend
+ggplot(df, aes(x = Time, y = Glucose)) +
+  geom_point(color = "blue", alpha = 0.5) +  # Scatter plot of noisy glucose levels
+  geom_line(aes(y = Smoothed_Glucose), color = "red", size = 1.2) +  # Smoothed curve
+  labs(title = "Smooth Spline Fit for Blood Glucose Levels Over Time",
+       x = "Time (Months)", y = "Glucose Level (mg/dL)") +
+  theme_minimal()
+
+```
+
+# Question Four:
+Now look online for a function in a package not in standard R. Write a paragraph explaining how the function works. Install the package, load with the library() function, and provide an example not included in the documentation.
+
+```{r}
+library(survival)
+```
+
+
+Explanation of the `survfit()` Function:
+The `survfit()` function from the survival package is used for fitting a survival model to data. It fits Kaplan-Meier survival curves or Cox proportional hazards models to time-to-event data. The function computes the survival function estimates (probability of survival at different times) based on the observed data, and it is frequently used in medical research, particularly for analyzing time-to-event data, such as time to death, disease recurrence, or failure. **Source - [R-studio](https://rviews.rstudio.com/2017/09/25/survival-analysis-with-r/)**
+
+
+
+## How `survfit()` Works:
+
+```{r}
+# Install and load the survival package
+library(survival)
+
+# Example dataset from the survival package
+data(lung)
+
+# Fit a Kaplan-Meier survival curve for the 'status' variable (death) by 'sex'
+surv_obj <- survfit(Surv(time, status) ~ sex, data = lung)
+
+# Display the survival curve
+summary(surv_obj)
+
+# Plot the survival curve
+plot(surv_obj, col = c("blue", "red"), lty = 1:2, 
+     main = "Kaplan-Meier Survival Curve by Sex", 
+     xlab = "Time (days)", ylab = "Survival Probability")
+
+```
+

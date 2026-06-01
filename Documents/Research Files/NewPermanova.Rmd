@@ -1,0 +1,668 @@
+---
+title: "Permanova new"
+author: "Olofin Daniel"
+date: "2025-06-17"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, fig.width = 7, fig.height = 5)
+```
+
+```{r eval=FALSE, include=FALSE}
+##Noemi has added you to the cloneid database, believe danielolofin is your username 
+## and Karyotyping_Analysis is the password. Access is only possible when you are on the Moffitt network.
+## If you email Noemi your home IP and/or moffitt guest IP she can give you access on those networks too.
+
+#create user 'danielolofin'@'206.81.166.156' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'206.81.166.156';  
+#create user 'danielolofin'@'192.168.1.32' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'192.168.1.32';  
+
+```
+
+```{r include=FALSE}
+# Libraries
+library(RMariaDB)
+library(DBI)
+library(tidyverse)
+library(dplyr)  
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+library(lme4)     # for linear mixed models
+library(lmerTest) # for p-values in lmer
+library(emmeans)  # for posthoc comparisons
+library(ggflowchart)
+library(car)
+library(sjPlot)
+library(webshot)
+library(stargazer)
+library(factoextra)
+library(FactoMineR)
+library(vegan)
+
+```
+
+```{r include=FALSE}
+
+db <- dbConnect(MariaDB(), dbname="CLONEID", 
+                host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com", 
+                user="danielolofin",
+                  password="Karyotyping_Analysis")
+
+query <- "SELECT id, passaged_from_id1, passage, event, date, media from Passaging WHERE passaged_from_id1"
+mismatches <- dbGetQuery(db, query)
+
+```
+
+```{r include=FALSE}
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+
+```
+
+```{r include=FALSE}
+dbListFields(db,"Perspective") ##karyotype data is in here.
+```
+
+```{r include=FALSE}
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+```
+
+```{r include=FALSE}
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+```
+
+
+
+```{r include=FALSE}
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the 
+## passaging table.
+
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+```
+
+```{r include=FALSE}
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+```
+
+
+```{r include=FALSE}
+# Define origins and build query
+origins <- c(
+  "SNU-668_R1_A55_seedT1", "SNU-668_R3_A55_seedT1", "SNU-668_K1_A34_seedT1",
+  "SNU-668_K2_A34_seedT1", "SNU-668_K3_A34_seedT1", "HGC-27_RevG_A9-F_seed",
+  "HGC-27_RevG2_A7-F_seed", "SNU-668_G1_A4_seed", "SNU-668_G2_A4_seed",
+  "HGC-27_RevC_A45_seed", "SNU-668_RevG_A3_seed", "SNU-668_P2_A18k_seed",
+  "SNU-668_P0_A11K_seed", "SNU-668_r2_A55_seedT1", "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed", "SNU-668_RevG_A10_seed", "HGC-27_G1_A9-F_seed",
+  "HGC-27_G2_A9_harvesT155", "HGC-27_G2_A9-F_seed", "HGC-27_G1_A9_harvesT155",
+  "HGC-27_RevG_A9_harvesT149", "HGC-27_RevG2_A8_seed", "MDA-MB-231_P_A2_harvest",
+  "HGC-27_C_A45_seed", "SNU-668_RevC_A27_seed", "SNU-668_C_A24_seed",
+  "SNU-668_C_A4_seed", "SNU-668_RevC_A3_seed", "MDA-MB-231_RPMI_A12_VT2_seed",
+  "SNU-668_P1_A18K_seed", "SNU-668_O1_A3_exp_seedT4", "SNU-668_O2_A3_exp_seedT4",
+  "HGC-27_P1_A18K_harvest", "HGC-27_P2_A18K_harvest", "SUM159_NLS_4N_O1_A7K_harvest",
+  "SUM159_NLS_2N_O1_A7K_harvest", "SUM-159_NLS_4N_A5M_K_harvest",
+  "SUM159_NLS_4N_O2_A7K_harvest", "SUM159_NLS_2N_O2_A7K_harvest",
+  "SUM-159_NLS_2N_A7M_K_harvest"
+)
+
+
+## Passaging table
+q <- paste0("SELECT * FROM Passaging")
+rs <- dbSendQuery(db, q)
+res_passage <- dbFetch(rs)
+dbClearResult(rs)
+
+names(res_passage)[1] <- "replicate_id"
+
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+ q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+
+
+# Fetch data from the database
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+```
+
+
+# Creating a new cell line for SUM to seperate (2N and 4N)
+
+```{r include=FALSE}
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+
+
+res$treatment_group <- case_when(
+  grepl("_G1|_G2", res$origin) ~ "Glucose",
+  grepl("_K1|_K2|_K3", res$origin) ~ "K_Condition",
+  grepl("_P1|_P2|_P0|_P", res$origin) ~ "Phosphate",
+  grepl("_R1|_R2|_R3|_r2", res$origin) ~ "R_Condition",
+  grepl("_O1|_O2", res$origin) ~ "Oxygen",
+  grepl("_RevC", res$origin) ~ "Reversine_Control",
+  grepl("_RevG|_RevG2", res$origin) ~ "Reversine_Glucose",
+  grepl("_C", res$origin) ~ "Control",
+  grepl("_RPMI", res$origin) ~ "Control",
+  grepl("_K", res$origin) ~ "Control",
+  TRUE ~ NA_character_
+)
+
+
+# Seperating SNU_168 by number of their chomosome
+res %>% 
+    mutate(sampleSource = ifelse(str_detect(alias, "N4") & sampleSource == "SUM-159",
+                               "SUM-159-4N",
+                               sampleSource)) -> res
+
+
+
+
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$cloneID <- res$cloneID
+karyo_df$line<- res$sampleSource
+karyo_df$replicate_id<- res$origin
+
+unique(karyo_df$replicate_id)
+
+karyo_df<- karyo_df %>%
+  mutate(time_category = case_when(
+    grepl("A([0-9]+)", replicate_id) & as.numeric(sub(".*_A([0-9]+).*", "\\1", replicate_id)) <= 10 ~ "Early",
+    grepl("harvesT", replicate_id, ignore.case = TRUE) ~ "Late",
+    grepl("A([0-9]+)", replicate_id) & as.numeric(sub(".*_A([0-9]+).*", "\\1", replicate_id)) >= 18 ~ "Late",
+    TRUE ~ "Ambiguous"
+  ))
+
+```
+
+
+# Grouping similar treatment conditions into biologically meaningful categories:
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyr)
+library(ggplot2)
+
+# Convert to long format for ggplot2
+karyo_long <- karyo_df %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "chromosome",
+               values_to = "count")
+
+# Boxplot for all chromosomes, faceted
+ggplot(karyo_long, aes(x = treatment, y = count, fill = treatment)) +
+  geom_boxplot(outlier.shape = NA, show.legend = F) +
+  facet_wrap(~chromosome, scales = "free_y", ncol = 6) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Chromosome Counts by Treatment",
+       y = "Chromosome Count")
+
+```
+
+```{r echo=FALSE}
+# Compute total chromosome per cell
+karyo_df$total_chr <- rowSums(karyo_df[, paste0("V", 1:22)])
+
+# Histogram of total chromosome count
+ggplot(karyo_df, aes(x = total_chr, fill = treatment)) +
+  geom_histogram(binwidth = 1, color = "black", position = "identity", alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Total Chromosome Count per Cell",
+       x = "Total Chromosomes",
+       y = "Number of Cells")
+
+```
+
+```{r}
+# Mean per chromosome per treatment
+mean_chr <- karyo_long %>%
+  group_by(treatment, chromosome) %>%
+  summarise(mean_count = mean(count, na.rm = TRUE), .groups = "drop")
+
+ggplot(mean_chr, aes(x = chromosome, y = mean_count, fill = treatment)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Mean Chromosome Count per Treatment",
+       y = "Mean Count")
+
+```
+
+```{r}
+library(pheatmap)
+
+# Make a cell-by-chromosome matrix
+karyo_mat <- as.matrix(karyo_df[, paste0("V", 1:22)])
+rownames(karyo_mat) <- karyo_df$cloneID
+# Build an annotation data frame for treatment
+annotation_row <- data.frame(treatment = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+
+
+# Simple heatmap
+pheatmap(karyo_mat[1:50, ], cluster_rows = TRUE, cluster_cols = TRUE, 
+         main = "Chromosome Profiles (Subset of Cells)",
+         show_rownames = FALSE)
+
+library(pheatmap)
+
+# Create matrix
+karyo_mat <- as.matrix(karyo_df[, paste0("V", 1:22)])
+rownames(karyo_mat) <- karyo_df$cloneID
+
+# Create annotation
+annotation_row <- data.frame(treatment = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+
+# Z-score normalize by chromosome (column)
+karyo_mat_z <- scale(karyo_mat)
+
+# Check dimensions
+stopifnot(all(rownames(karyo_mat_z) == rownames(annotation_row)))
+
+# Plot heatmap
+pheatmap(karyo_mat_z,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         annotation_row = annotation_row,
+         main = "Z-score Normalized Chromosome Profiles (All Cells)",
+         show_rownames = FALSE,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+
+
+
+# Make matrix of chromosome counts
+karyo_mat <- as.matrix(karyo_df[, paste0("V", 1:22)])
+rownames(karyo_mat) <- karyo_df$cloneID
+
+# Create annotation for treatments
+annotation_row <- data.frame(treatment = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+
+# Sanity check alignment
+stopifnot(all(rownames(karyo_mat) == rownames(annotation_row)))
+
+# Plot heatmap without normalization
+pheatmap(karyo_mat,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         annotation_row = annotation_row,
+         main = "Raw Chromosome Copy Numbers (All Cells)",
+         show_rownames = FALSE,
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+
+
+```
+
+
+- **Note:** Cell-Level PERMANOVA without Collapsing Replicates because:
+1. I am studying how treatment affects individual cells' karyotypes.
+2. Each row represents a unique cell, preserving biological variability within flasks.
+3. I stratify by line, so that permutations are done within each cell line.
+4. So that I can retain statistical power, because you are using all the data (not just averages).
+
+```{r}
+# Load necessary libraries
+library(vegan)
+library(dplyr)
+library(ggplot2)
+
+# Step 1: Make sure your karyo_df and meta_flask align
+# Let's say rownames were not preserved, rebuild them together
+
+# Create distance matrix from a clean matrix
+karyo_mat <- as.matrix(karyo_df[ , 1:22])
+rownames(karyo_mat) <- karyo_df$replicate_id   # Set replicate_id as rownames
+
+# Create metadata with matching replicate_id
+meta_flask <- karyo_df[, c("replicate_id", "line", "treatment","time_category")]
+rownames(meta_flask) <- seq_len(nrow(meta_flask))
+rownames(karyo_mat) <- seq_len(nrow(karyo_mat))
+
+# Now subset meta_flask to match the distance matrix
+meta_flask <- meta_flask[rownames(karyo_mat), ]
+
+# Recreate distance matrix and run adonis2
+dist_flask <- dist(karyo_mat)
+
+# Check alignment
+stopifnot(all(rownames(meta_flask) == attr(dist_flask, "Labels")))
+
+# Run adonis2 and save result
+adonis_res <- adonis2(
+  formula = dist_flask ~ line + treatment,
+  data = meta_flask,
+  strata = meta_flask$line,
+  permutations = 999
+)
+
+adonis_res <- adonis2(
+  formula = dist_flask ~ line + treatment + time_category,
+  data = meta_flask,
+  strata = meta_flask$line,
+  permutations = 999
+)
+
+
+
+# Convert to data frame for export
+adonis_df <- as.data.frame(adonis_res)
+
+# Clean row names as a column
+adonis_df <- tibble::rownames_to_column(adonis_df, "Effect")
+
+# Print or view
+print(adonis_df)
+
+```
+
+**Interpretation:** A PERMANOVA was conducted to assess whether differences in karyotype profiles among individual cells were significantly associated with cell line and treatment conditions, while accounting for stratified permutation within each cell line. The overall model was highly significant (F = 109.94, $p$ = 0.001), indicating that the combined effects of cell line and treatment explain approximately 63.4% of the total variation in the chromosome features ($R^{2}$ = 0.634). This suggests that both the intrinsic characteristics of different cell lines and the external interventions from treatments contribute meaningfully to chromosomal differences observed in the data. The remaining 36.6% of the variation is unexplained by these variables and may reflect biological heterogeneity, noise, or other unmeasured factors.
+
+```{r}
+# Step 6: Test if treatment affects karyotype variability (dispersion)
+library(vegan)
+
+# Step 1: Compute dispersion
+dispersion <- betadisper(dist_flask, group = meta_flask$treatment)
+
+# Step 2: Run ANOVA
+dispersion_anova <- anova(dispersion)
+
+# Step 3: Convert to tidy table
+dispersion_df <- broom::tidy(dispersion_anova)
+
+# Optional: Clean row names if needed
+dispersion_df <- tibble::rownames_to_column(dispersion_df, var = "Effect")
+
+# View or print
+print(dispersion_df)
+```
+**Note:** We discussed about using variance. This PERMISP is meant to check the asumption of PERMANOV and also Multivariate dispersion (spread) across groups. it test Overall karyotype variability across treatments.
+
+
+**Intepretation:** The analysis of multivariate dispersions (PERMDISP) revealed a significant difference in dispersion among treatment groups (F = 10.76, p < 0.001), suggesting that variability within treatments is not uniform. This violates a key assumption of PERMANOVA, which presumes homogeneous dispersions. Consequently, although significant PERMANOVA results may indicate group differences, part of this difference could stem from heterogeneous group variances (dispersion), rather than true differences in centroid locations. Therefore, any inference about treatment effects on karyotype composition should be interpreted with caution and supported with additional visualization (e.g., NMDS/CAPscale plots) or models robust to dispersion differences, such as generalized linear models.
+
+
+```{r}
+permutest(dispersion, permutations = 999, pairwise = T ) ->t
+t$pairwise %>% kableExtra::kable(digits = 4, caption = "Pairwise Permuted P-Values for Group Dispersion")
+```
+
+**Interpretation:**
+The pairwise PERMDISP analysis revealed significant differences in dispersion (i.e., within-group variability) among several treatment groups, indicating that the assumption of homogenous variance required by PERMANOVA is violated in many comparisons. Notably, treatments such as Glucose, Oxygen, R_Condition, and Reversine_Glucose showed significant differences in dispersion when compared with multiple other treatments (p < 0.05). For example, Glucose differed significantly from K_Condition, Phosphate, and R_Condition, while R_Condition differed in dispersion from nearly all other treatments, suggesting it may be especially destabilizing to karyotypic structure. In contrast, treatments like Control vs Reversine_Glucose and Reversine_Control vs Reversine_Glucose did not differ significantly in their dispersion, indicating comparable within-group variability. These findings imply that differences observed in PERMANOVA results could, at least in part, be driven by differences in dispersion rather than shifts in group centroids alone.
+
+```{r}
+plot(dispersion, hull = FALSE, main = "Group Dispersion Plot")
+boxplot(dispersion, main = "Boxplot of Multivariate Dispersion by Group")
+
+
+```
+
+
+
+
+-   2: GLMM for Per-Chromosome Changes
+
+```{r}
+library(lme4)
+
+# Binary outcome: gain defined as >2 copies
+karyo_df$gain_chr08 <- ifelse(karyo_df$V8 > 2, 1, 0)
+
+# GLMM: treatment as fixed effect, replicate as random effect
+model_chr8 <- glmer(gain_chr08 ~ treatment + (1 | replicate_id), 
+                    data = karyo_df, family = binomial)
+
+summary(model_chr8)
+
+
+```
+**Note:** why use chr08 (This is reference to  the fact that biological relevance, in many cancer gain of chr08 are commonly associated with tumor progression).
+**Interpretation:** The generalized linear mixed model assessing the impact of treatment on chromosome 08 gain revealed that no treatment condition had a statistically significant effect compared to the control. The control group showed a significantly high baseline probability of chr08 gain. Variability among replicate flasks was substantial, supporting the inclusion of random effects in the model.
+
+## P-Adjustment (e.g., Bonferroni and Benjamini-Hochberg)
+```{r}
+# Extract p-values from model summary
+p_vals <- summary(model_chr8)$coefficients[-1, "Pr(>|z|)"]  # Exclude Intercept
+
+# Adjust p-values (Bonferroni)
+p_adj_bonf <- p.adjust(p_vals, method = "bonferroni")
+
+# Adjust p-values (Benjamini-Hochberg)
+p_adj_bh <- p.adjust(p_vals, method = "BH")
+
+# Combine results
+p_table <- data.frame(
+  Treatment = names(p_vals),
+  Raw_P = p_vals,
+  Bonferroni = p_adj_bonf,
+  BH = p_adj_bh
+)
+
+p_table %>% kableExtra::kable()
+
+```
+**Interpretation:** A generalized linear mixed model (GLMM) was used to assess whether different treatment conditions significantly influenced the likelihood of gain of chromosome 08 across replicate cell populations. None of the treatments showed a statistically significant effect, either before or after adjusting for multiple testing using Bonferroni or Benjamini-Hochberg (BH) procedures. The lowest raw p-value was observed for the Oxygen treatment (p = 0.158), but this did not remain significant after adjustment. These findings suggest that gain of chromosome 08 is not significantly associated with any specific treatment condition in this dataset, implying that observed variations are likely due to random chance or other uncontrolled biological factors.
+
+
+1. Repeat the GLMM for other chromosomes (chr07, chr13, etc.)
+
+```{r}
+library(lme4)
+library(dplyr)
+library(tidyr)
+
+# Example for chr07 and chr13
+karyo_df <- karyo_df %>%
+  mutate(
+    gain_chr07 = ifelse(V7 > 2, 1, 0),
+    gain_chr13 = ifelse(V13 > 2, 1, 0)
+  )
+
+# Fit GLMMs for chr07 and chr13
+fit_chr07 <- glmer(gain_chr07 ~ treatment + (1 | replicate_id),
+                   data = karyo_df, family = binomial)
+fit_chr13 <- glmer(gain_chr13 ~ treatment + (1 | replicate_id),
+                   data = karyo_df, family = binomial)
+
+# Summarize models
+summary(fit_chr07)
+summary(fit_chr13)
+```
+
+
+```{r}
+for (cell_line in unique(karyo_df$line)) {
+  cat("\n\n### Cell Line:", cell_line, "###\n")
+  line_df <- subset(karyo_df, line == cell_line)
+  line_mat <- vegdist(as.matrix(line_df[, 1:22]), method = "manhattan")
+  
+  print(adonis2(line_mat ~ treatment, 
+                data = line_df, 
+                permutations = 999))
+}
+
+
+
+library(vegan)
+library(pairwiseAdonis)
+
+library(vegan)
+
+library(vegan)
+library(dplyr)
+
+# Initialize a list to hold pairwise results for each cell line
+all_pairwise_results <- list()
+
+for (cell_line in unique(karyo_df$line)) {
+  cat("\n\n### Cell Line:", cell_line, "###\n")
+  
+  # Subset data for the current cell line
+  line_df <- subset(karyo_df, line == cell_line)
+  treatments <- unique(line_df$treatment)
+  
+  # Compute overall distance matrix
+  line_mat <- vegdist(as.matrix(line_df[, 1:22]), method = "manhattan")
+  
+  # Run overall PERMANOVA
+  cat("Overall PERMANOVA:\n")
+  print(adonis2(line_mat ~ treatment, data = line_df, permutations = 999))
+  
+  # Pairwise comparisons (manual)
+  pairwise_results <- data.frame()
+  
+  for (i in 1:(length(treatments) - 1)) {
+    for (j in (i + 1):length(treatments)) {
+      t1 <- treatments[i]
+      t2 <- treatments[j]
+      
+      # Subset for two treatment groups
+      sub_df <- line_df[line_df$treatment %in% c(t1, t2), ]
+      
+      # Check for replicates
+      if (sum(sub_df$treatment == t1) < 2 || sum(sub_df$treatment == t2) < 2) next
+      
+      # Compute distance
+      sub_mat <- vegdist(as.matrix(sub_df[, 1:22]), method = "manhattan")
+      
+      # Run pairwise PERMANOVA
+      result <- adonis2(sub_mat ~ treatment, data = sub_df, permutations = 999)
+      
+      # Collect results
+      pairwise_results <- rbind(pairwise_results, data.frame(
+        Cell_Line = cell_line,
+        Group1 = t1,
+        Group2 = t2,
+        F_value = result$F[1],
+        P_value = result$`Pr(>F)`[1]
+      ))
+    }
+  }
+  
+  # Adjust p-values
+  if (nrow(pairwise_results) > 0) {
+    pairwise_results$P_adj_BH <- p.adjust(pairwise_results$P_value, method = "BH")
+    pairwise_results$P_adj_Bonf <- p.adjust(pairwise_results$P_value, method = "bonferroni")
+    all_pairwise_results[[cell_line]] <- pairwise_results
+  } else {
+    cat("Not enough replicates per group for pairwise comparisons.\n")
+  }
+}
+
+
+
+```
+**Interpretation:** PERMANOVA analysis within individual cell lines revealed that treatment significantly influenced karyotypic variation in HGC-27 ($R^{2}$ = 12.2%, $p$ = 0.001), MDAMB231 ($R^{2}$ = 19.7%, $p$ = 0.001), and SNU-668 ($R^{2}$ = 16.1%, $p$ = 0.001), suggesting strong treatment effects on chromosomal composition within these lines. In contrast, no significant treatment effects were observed in SUM-159 ($R^{2}$ = 0.07%, $p$ = 0.848) and SUM-159-4N ($R^{2}$ = 2.9%, $p$ = 0.229), indicating greater karyotypic stability or treatment resistance in those lines.
+
+```{r}
+# Optional: combine all into one table
+combined_pairwise_results <- do.call(rbind, all_pairwise_results)
+
+# View combined results
+combined_pairwise_results %>% kableExtra::kable()
+
+
+```
+
+**Interpretation:** The pairwise PERMANOVA analysis across four cell lines (HGC-27, MDAMB231, SNU-668, SUM-159, and SUM-159-4N) revealed strong treatment-specific karyotypic divergence, particularly in HGC-27 and SNU-668, while minimal or no effects were observed in SUM-159 lines.
+
+- HGC-27: All 10 pairwise comparisons were statistically significant, even after both Benjamini-Hochberg (BH) and Bonferroni corrections. This indicates robust and consistent differences in chromosomal profiles between treatments such as Control vs. Glucose, Phosphate, and both Reversine conditions. These results underscore HGC-27’s high karyotypic sensitivity to environmental or drug-induced perturbations.
+
+- MDAMB231: Only one pairwise comparison (Phosphate vs. RPMI) was significant (p < 0.001), suggesting a more specific and limited treatment effect on karyotype composition in this line.
+
+- SNU-668: This line showed extensive significant pairwise differences across treatments. 27 out of 28 pairs were significant after BH adjustment (many also Bonferroni corrected), especially comparisons involving K_Condition, Oxygen, Phosphate, and Reversine_Glucose. This makes SNU-668 the most karyotypically plastic line in response to diverse conditions.
+
+- SUM-159 & SUM-159-4N: No pairwise comparisons reached significance. This suggests that karyotype profiles remain stable in these lines across the tested treatments, indicating low chromosomal variability or insensitivity to the perturbations.
+
+
+
+
+
+```{r}
+# Step 7: Visualize results using PCoA (ordination plot)
+pcoa <- cmdscale(dist_flask, eig = TRUE, k = 2)
+pcoa_df <- data.frame(PC1 = pcoa$points[,1],
+                      PC2 = pcoa$points[,2],
+                      treatment = meta_flask$treatment,
+                      line = meta_flask$line)
+
+ggplot(pcoa_df, aes(x = PC1, y = PC2, color = treatment, shape = line)) +
+  geom_point(size = 4) +
+  theme_minimal() +
+  ggtitle("PCoA of Karyotype Profiles (Flask Centroids)")
+
+```
+
+```{r}
+# MDS using Manhattan Distance
+
+# Load necessary libraries
+library(vegan)
+library(ggplot2)
+library(dplyr)
+
+
+# Step 1: Extract the chromosome features (V1 to V22)
+karyo_matrix <- as.matrix(karyo_df[, paste0("V", 1:22)])
+
+# Step 2: Compute Manhattan distance
+dist_manhattan <- dist(karyo_matrix, method = "manhattan")
+
+# Step 3: Perform MDS
+mds_fit <- cmdscale(dist_manhattan, k = 2, eig = TRUE)
+
+# Step 4: Prepare metadata
+mds_df <- as.data.frame(mds_fit$points)
+colnames(mds_df) <- c("Dim1", "Dim2")
+mds_df$replicate_id <- karyo_df$replicate_id
+mds_df$treatment <- karyo_df$treatment
+mds_df$line <- karyo_df$line
+
+# Step 5: Visualize
+ggplot(mds_df, aes(x = Dim1, y = Dim2, color = treatment, shape = line)) +
+  geom_point(alpha = 0.7, size = 3) +
+  labs(title = "MDS Plot using Manhattan Distance",
+       x = "Dimension 1", y = "Dimension 2") +
+  theme_minimal(base_size = 14)
+```
+
+
+

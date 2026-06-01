@@ -1,0 +1,33 @@
+---
+title: "Untitled"
+author: "Olofin Daniel"
+date: "2025-07-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## PERMANOVA Formula
+
+PERMANOVA partitions the total sum of squares (based on pairwise distances) as:
+
+\[
+SS_{\text{total}} = SS_{\text{between}} + SS_{\text{within}}
+\]
+
+The test statistic is:
+
+\[
+F = \frac{SS_{\text{between}} / df_{\text{between}}}{SS_{\text{within}} / df_{\text{within}}}
+\]
+
+Where:
+- \( SS_{\text{between}} \): Sum of squares between group centroids
+- \( SS_{\text{within}} \): Sum of squares within groups
+- \( df_{\text{between}} \): Number of groups minus 1
+- \( df_{\text{within}} \): Number of samples minus number of groups
+
+A p-value is obtained by permuting the group labels many times (e.g., 999 permutations) and recalculating \( F \) each time, forming a null distribution.
+

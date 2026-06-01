@@ -1,0 +1,92 @@
+---
+title: "Home work 9"
+author: "Moshood A. Garuba"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+Create a regex that extracts quoted phrases, including the quotation marks. If there are multiple quoted phrases, they should be treated as separate matches. Test it on the following two strings.
+
+```{r message=FALSE, warning=FALSE}
+# Test strings
+albert <- "Einstein said, \"God does not play dice with the universe.\""
+news_clip <- "The death toll makes the wildfire the deadliest since 1918,
+when 453 people were killed in Minnesota and Wisconsin by the Cloquet & Moose
+Lake Fires, according to the National Fire Protection Association. Losses are
+estimated to be approaching $6 billion, after roughly 2,200 structures were
+destroyed in West Maui across the 2,170 acres burned by the blaze. \"This is
+the largest natural disaster we've ever experienced,\" Green said. \"It's
+also going to be a natural disaster that takes an incredible amount of time
+to recover from.\" The death toll makes the wildfire the deadliest since 1918,
+when 453 people were killed in Minnesota and Wisconsin by the Cloquet & Moose
+Lake Fires, according to the National Fire Protection Association. Losses are
+estimated to be approaching $6 billion, after roughly 2,200 structures were
+destroyed in West Maui across the 2,170 acres burned by the blaze."
+
+# Extract quoted text including the quotes
+regmatches(albert, gregexpr("\"[^\"]*\"", albert))[[1]]
+regmatches(news_clip, gregexpr("\"[^\"]*\"", news_clip))[[1]]
+
+```
+
+# Question 2: 
+Create a regex that extracts email addresses in the _____@_____.___ format. The email address will be composed of letters or numbers. Test it on the following character vector.
+```{r message=FALSE, warning=FALSE}
+possible_emails <- c(
+  "My email is scarden@georgiasouthern.edu.",
+  "My twitter handle is @swcarden.",
+  "Order your buds from four20@blazeit.com!"
+)
+
+# Extract emails
+matches <- regmatches(possible_emails, gregexpr("\\b[a-zA-Z0-9]+@[a-zA-Z0-9]+\\.[a-zA-Z0-9]+\\b", possible_emails))
+matches
+
+```
+
+# Question 3:
+Create a regex that can identify dates in a “mm/dd/yyyy” format. The connector can be either forward slashes or dashes, but can’t be mixed. Just focus on the format; it’s okay if it recognizes dates that are numerically impossible (01/32/2023).
+```{r message=FALSE, warning=FALSE}
+library(stringr)
+
+possible_dates <- c("I was born on 09/19/1985.",
+                    "Your arithmetic problem is to evaluate 12-12/1500.",
+                    "01-01-2000 was the first day of the millenia.",
+                    "Galileo's birthday was 02/15/1564. I forgot his present!",
+                    "5/5/5555 isn't in standard format.")
+
+str_extract_all(possible_dates, "(?:\\d{2}/\\d{2}/\\d{4}|\\d{2}-\\d{2}-\\d{4})")
+```
+
+
+## 4) Import the `faculty.csv` file we created in Lecture 8.  Use a regex to extract the date from the `Terminal Degree` column and place into a new column called `Degree Date`. (5) (Grad student only)
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+
+faculty <- read.csv("faculty.csv")
+faculty <- faculty %>%
+  mutate(`Degree Date` = str_extract(`Terminal.Degree`, "\\d{4}")) %>%
+  rename(`Office/Phone` = 
+           'Office.Phone...1.912..A....Armstrong.L....Liberty.S....Statesboro') %>% 
+  mutate(`Phone` = str_extract(`Office/Phone`, "\\d{3}-\\d{4}")) %>%
+  mutate(`Office` = str_extract(`Office/Phone`, "[0-9a-zA-Z]+( [0-9a-zA-Z]+)?")) %>%
+  mutate(`Degree` = str_extract
+         (`Title`, "(M\\.?S\\.?|M\\.Phil|M\\.Ed\\.?|Ed\\.?S\\.?|Ed\\.?D\\.?|Ph\\.?D\\.?)")) %>%
+  mutate(`Alma mater` = str_extract(`Title`, "\\(([^)]*University[^)]*)\\)")) %>%
+  mutate(Title = str_replace(Title, " of Mathematics", "")) %>%
+  mutate(Title = word(Title, 1, 2))
+
+
+#knitr::kable(faculty) #table does not fit into PDF width, so not showing.
+write.csv(faculty, "faculty_cleaned.csv", row.names = FALSE)
+```

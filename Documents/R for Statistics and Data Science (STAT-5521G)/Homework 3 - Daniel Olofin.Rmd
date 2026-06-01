@@ -1,0 +1,127 @@
+---
+title: "Homework 4"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. This problem will have you create, modify, and expand a data frame.
+
+## a. Create a small data frame describing a set of objects like I did with cardens. There should be at least four observations, and at least three variables, with at least one variable that is numeric and at least one that is a factor. The first column should be something usable as a unique identifier.
+
+```{r}
+# Create a data frame
+fruit_df <- data.frame(
+  ID = c("F001", "F002", "F003", "F004"),  # Unique identifier
+  Name = factor(c("Apple", "Banana", "Cherry", "Date")),  # Factor variable
+  Price = c(1.2, 0.5, 2.5, 3.0)  # Numeric variable
+)
+
+# View the data frame
+print(fruit_df)
+
+```
+
+## b. Use logical indexing on the identifier column to select a row, and use a column/variable name to select a column, and use these to update one of the values in the data frame.
+
+```{r}
+# Update the price of Banana using logical indexing
+fruit_df[fruit_df$ID == "F002", "Price"] <- 0.6
+
+# Check the updated data frame
+print(fruit_df)
+```
+
+
+## c. Use rbind() to add a new observation, and cbind() to add a new variable
+```{r}
+# Create a new row as a data frame
+new_fruit <- data.frame(ID = "F005", Name = factor("Elderberry"), Price = 4.0)
+
+# Define a new column (factor variable)
+fruit_colors <- c("Red", "Yellow", "Red", "Brown", "Purple")
+
+# Use rbind() to add the new observation
+fruit_df <- rbind(fruit_df, new_fruit)
+
+# Use cbind() to add the new column
+fruit_df <- cbind(fruit_df, Color = factor(fruit_colors))
+
+# View final data frame
+print(fruit_df)
+
+```
+
+# 2. The code below will generate a small random matrix. Write code that will identify and remove the row with the smallest sum of absolute values.
+
+```{r}
+set.seed(123)
+x <- matrix(sample(-5:5, 15, replace = TRUE), nrow = 5)
+
+# Print the original matrix
+print(x)
+
+# Compute the sum of absolute values for each row
+row_sums <- rowSums(abs(x))
+
+# Identify the index of the row with the smallest sum
+min_row_index <- which.min(row_sums)
+
+# Remove the row with the smallest sum
+x <- x[-min_row_index, , drop = FALSE]
+
+# Print the updated matrix
+print(x)
+```
+
+# 3. Identify and display the most frequent entry in the vector x. If there are ties, returning one of the values is sufficient. Hint: The table() function with argument decreasing = TRUE makes this much shorter than it might be otherwise.
+
+```{r}
+# Generate a random sample
+x <- sample(1:5, 20, replace = TRUE)
+
+# Print the vector
+print(x)
+
+# Create a frequency table, sorted in decreasing order
+freq_table <- sort(table(x), decreasing = TRUE)
+
+# Extract and display the most frequent value
+most_frequent <- as.numeric(names(freq_table)[1])
+
+print(most_frequent)
+
+```
+
+# 4. Highlight the following line and run it several times. Sometimes it returns a value, and sometimes it returns NULL. Explain why sometimes NULL is returned. Without changing the randomization aspect, find a way to ensure it never returns NULL.
+
+```{r}
+rownames(mtcars[ ,
+sample(1:4, sample(1:4, size = 1))
+])[[1]]
+```
+
+- **why is it null:** It returns `NULL` when no columns are selected from `mtcars`, which happens if `sample(1:4, size = 1)` randomly chooses `0`. In this case, `mtcars[ , selected_columns]` results in an empty data frame, and `rownames()` applied to an empty data frame returns an empty vector. Attempting to access `[[1]]` on an empty vector leads to `NULL`.
+
+## solving it not to return NULL
+```{r}
+rownames(mtcars[ , sample(1:4, sample(1:4, size = 1)), drop = FALSE])[[1]]
+```
+# 5. Write a line of code that will remove any values from x that are not repeated.
+Hint: My solution used %in%, as.numeric, names, table, >.
+
+```{r}
+x <- sample(c(-10:10), sample(20:40, 1), replace = TRUE)
+
+# Remove values that appear only once
+x <- x[x %in% as.numeric(names(table(x)[table(x) > 1]))]
+
+# Print the updated x
+print(x)
+
+```
+

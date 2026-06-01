@@ -1,0 +1,178 @@
+---
+title: "Home work 8"
+author: "Daniel O. Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+Read the documentation for read_xlsx(), specifically the portion for the range = argument. Use this argument to construct an alternative but equivalent implementation for importing the EMG and kinematics data.
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+
+EMG_Kin <- read_xlsx("EMG and Kinematics of walking.xlsx",
+                     skip = 2,
+                     col_names = c("Time_Kin",
+                                   "Hip",
+                                   "Knee",
+                                   "Ankle",
+                                   "Time_EMG",
+                                   "VastusLateralis",
+                                   "Gastrocnemius",
+                                   "TibialisAnterior"))
+EMG_Kin
+```
+
+# Question 2
+
+Pick up where we left off with the STAT 1401 survey example. Clean the Minutes to hometown variable and calculate the average. If someone entered a range, use the midpoint. For now use the techniques shown in the previous lecture; later we may learn some string manipulation methods to automate it further.
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+
+survey <- read.csv("STAT 1401 Survey Data - 2014 - Sheet1.csv",
+                   col.names = c(
+                     "What's the last movie you saw in the theater?",
+                     "On a scale of 1 star to 5 stars, how would you rate that movie?",
+                     "What is your height in inches?",
+                     "How many inches long is your foot?  If you don't have something for measuring handy, just estimate.",
+                     "What is your gender?",
+                     "What city and state were you born in? If you were born outside the US, please put the country as well.",
+                     "Do you consider yourself a vegetarian or vegan?",
+                     "Have you ever been in a car accident when YOU were the driver?",
+                     "Which of the following desserts do you prefer most?",
+                     "Which choice best reflects your political leanings?",
+                     "Which choice best reflects the political leanings of your mother?",
+                     "How many siblings do you have?",
+                     "How long does it take to drive from your hometown to Statesboro? Report your answer in minutes.",
+                     "Do you give your permission for the instructor to use this data in examples?  Your name and ID will not appear and all information will be treated anonymously.",
+                     "What is your major?"
+                   ),
+                   check.names = FALSE)
+View(survey)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(stringr)
+
+# Rename the long column for ease of use
+survey <- survey |> 
+  rename(`Minutes to hometown` = 
+           `How long does it take to drive from your hometown to Statesboro? Report your answer in minutes.`)
+
+# Extract the 'Minutes to hometown' column as a vector
+minutes_to_hometown <- survey %>%
+  pull(`Minutes to hometown`)
+
+# Simulated sample data (for illustration)
+minutes_to_hometown_data <- list(
+  5, "270-300 minutes", 94, 105, "Maybe 6000 minutes", 35, 180, 600, 0, 180,
+  "120 minutes", "90 minutes", 45, 70, "120 minutes", "45-50", 270, "160min",
+  240, 972, 45, 210, 270, 150, 210, 90, 240, 90, 180, 50, 60, "240 minutes",
+  210, 65, "90 minutes", 240, "210 minutes", 75, 210, 210, 240
+)
+
+# Function to clean character entries and extract numerical midpoint
+clean_and_extract_midpoint <- function(x) {
+  if (is.numeric(x)) {
+    return(x)
+  } else if (is.character(x)) {
+    # Extract all numeric values from the string
+    extracted_values <- as.numeric(unlist(str_extract_all(x, "\\d+")))
+    
+    # If numbers were found, return their mean (useful for ranges)
+    if (length(extracted_values) > 0) {
+      return(mean(extracted_values))
+    } else {
+      return(NA)
+    }
+  } else {
+    return(NA)
+  }
+}
+
+# Apply the cleaning function to the list of responses
+cleaned_data <- lapply(minutes_to_hometown_data, clean_and_extract_midpoint)
+
+# Optionally convert to numeric vector
+cleaned_data <- unlist(cleaned_data)
+
+# View cleaned data
+print(cleaned_data)
+
+# Calculate average time to hometown (ignoring NA values)
+average_time <- mean(cleaned_data, na.rm = TRUE)
+cat("Average minutes to hometown:", average_time, "\n")
+
+
+```
+
+```{r message=FALSE, warning=FALSE}
+#calculating the average
+average_number_mins <- mean(unlist(cleaned_data), na.rm = TRUE)
+cat("Average:", average_number_mins)
+
+```
+
+# Question 3: Scrape a website.
+(Grad version) Find a website and identify at least two variables to be scraped. These variables should not be in the same table. If they each happen to be in separate tables, extract them without using the html_table() function. The information may be on a single page or multiple pages. You should have at least two observations of each variable (so minimum ending data frame size is 2x2). In a polite manner, scrape these variables into a data frame and write it to a .csv file. You must do this from scratch rather than repeating a scraping tutorial.
+
+```{r message=FALSE, warning=FALSE}
+library(rvest)
+library(dplyr)
+# URL for population data
+url_population <- "https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_population"
+
+# URL for GDP data
+url_gdp <- "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
+
+# Read the HTML content
+page_population <- read_html(url_population)
+
+# Extract the table containing population data
+table_population <- page_population %>% html_node("table.wikitable")
+
+# Extract country names and populations
+population_data <- table_population %>%
+  html_table() %>%
+  select(Country = 1, Population = 2)
+
+# Clean the data
+population_data <- population_data %>%
+  mutate(Population = as.numeric(gsub(",", "", Population))) %>%
+  filter(!is.na(Population))
+
+# Read the HTML content
+page_gdp <- read_html(url_gdp)
+
+# Extract the table containing GDP data
+table_gdp <- page_gdp %>% html_node("table.wikitable")
+
+# Extract country names and GDPs
+gdp_data <- table_gdp %>%
+  html_table() %>%
+  select(Country = 1, GDP = 2)
+
+# Clean the data
+gdp_data <- gdp_data %>%
+  mutate(GDP = as.numeric(gsub(",", "", GDP))) %>%
+  filter(!is.na(GDP))
+
+# Merge datasets on Country
+merged_data <- inner_join(population_data, gdp_data, by = "Country")
+
+merged_data
+write.csv(merged_data, "country_population_gdp.csv", row.names = FALSE)
+```
+
+

@@ -1,0 +1,48 @@
+---
+title: "Homework 3"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+x <- sample(c(-10:10, rep(NA, 5)), sample(20:40, 1), replace = TRUE)
+x
+```
+
+
+# 1. Find and display the last element of the vector.
+```{r}
+tail(x, n = 1)
+```
+
+# 2. Display every other element of the vector, that is, the ones in odd indices.
+```{r}
+x[c(seq(1, length(x), by = 2))]
+```
+
+# 3. Display the non-missing values, that is, those that are not NA
+```{r}
+x[!is.na(x)]
+```
+
+# 4. Display sum of squared values when NA values have been removed
+```{r}
+sum(x[!is.na(x)]^2)
+```
+
+# 5. Display the number of unique entries that are in the vector.
+```{r}
+unique(x)
+```
+
+# 6. (Grad student only) Change the sign of any values of the vector that are multiples of three.
+```{r}
+x_sign_changed<-ifelse(!is.na(x) & x %% 3 == 0, -x,x)
+x_sign_changed
+```
+

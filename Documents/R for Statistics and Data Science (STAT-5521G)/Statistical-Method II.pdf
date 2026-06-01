@@ -1,0 +1,22 @@
+---
+title: "Homework 3"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading of **Health** data
+```{r}
+statme <- read_table("statme.txt")
+```
+
+```{r}
+XtX <- t(health) %*% X
+print(XtX)
+
+```
+

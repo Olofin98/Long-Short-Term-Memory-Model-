@@ -1,0 +1,774 @@
+---
+title: "Exploration: Tipping Cancer Cells"
+author: "Daniel Olofin"
+date: "2025-05-13"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+##Noemi has added you to the cloneid database, believe danielolofin is your username 
+## and Karyotyping_Analysis is the password. Access is only possible when you are on the Moffitt network.
+## If you email Noemi your home IP and/or moffitt guest IP she can give you access on those networks too.
+
+#create user 'danielolofin'@'206.81.166.156' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'206.81.166.156';  
+#create user 'danielolofin'@'192.168.1.32' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'192.168.1.32';  
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Libraries
+library(RMariaDB)
+library(DBI)
+library(tidyverse)
+library(dplyr)  
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+library(lme4)     # for linear mixed models
+library(lmerTest) # for p-values in lmer
+library(emmeans)  # for posthoc comparisons
+library(ggflowchart)
+library(car)
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+db <- dbConnect(MariaDB(), dbname="CLONEID", 
+                host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com", 
+                user="danielolofin",
+                  password="Karyotyping_Analysis")
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+dbListFields(db,"Perspective") ##karyotype data is in here.
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the 
+## passaging table.
+
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+```
+
+# Objective: (G1 and G2 are combined)
+
+To extract single-cell karyotype profiles from the database and prepare a structured dataset for downstream statistical and visualization analyses. The focus was on comparing karyotypic variation between glucose-deprived and control treatment groups. (considering G1 and G2 togather)
+
+- The query targeted six specific origins corresponding to three experimental conditions:
+  - **Glucose Deprived – G1**: `SNU-668_G1_A4_seed`, `SNU-668_G1_A10_seed`
+  - **Glucose Deprived – G2**: `SNU-668_G2_A4_seed`, `SNU-668_G2_A10_seed`
+  - **Control**: `SNU-668_C_A4_seed`, `SNU-668_C_A24_seed`
+  
+```{r message=FALSE, warning=FALSE}
+
+# Define origins and build query
+origins <- c(
+  "SNU-668_G1_A4_seed",
+  "SNU-668_G2_A4_seed",
+  "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed",
+  "SNU-668_C_A4_seed",
+  "SNU-668_C_A24_seed"
+)
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+# Fetch data from the database
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+```
+
+## Data Manipulation
+
+### Creating a matrix
+Combined vectors into a matrix kmat (cells × chromosomes)
+
+The resulting vectors were combined into a matrix kmat, where:
+
+- Rows = individual cells
+- Columns = chromosomal bins or regions
+
+```{r message=FALSE, warning=FALSE}
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+```
+
+
+### Treatment Group Labeling
+Each sample was labeled according to its treatment condition based on the origin string:
+
+Origins containing _G were labeled as "GlucoseDeprived"
+Origins containing _C were labeled as "Control"
+
+```{r message=FALSE, warning=FALSE}
+# Labeling treatment groups based on origin
+res$treatment <- ifelse(grepl("_G", res$origin), "GlucoseDeprived",
+                        ifelse(grepl("_C", res$origin), "Control", NA))
+
+#  Combining karyotype matrix with metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$origin <- res$origin
+karyo_df$cloneID <- res$cloneID
+
+```
+
+### Reshaping of data to long format
+
+Each value in kmat and thus each copy_number value represents the copy number estimate of a specific genomic region or chromosome segment in a single cell.
+
+The values are often centered around 2.0 for diploid chromosomes.
+
+- Values >2 → amplification (gain)
+
+- Values <2 → deletion (loss)
+
+
+```{r message=FALSE, warning=FALSE}
+# Reshape to long format
+karyo_long <- melt(karyo_df, 
+                   id.vars = c("treatment", "origin", "cloneID"), 
+                   variable.name = "chromosome", 
+                   value.name = "copy_number")
+
+# Order treatment groups 
+karyo_long$group <- factor(karyo_long$treatment, levels = c("Control", "G1", "G2"))
+```
+
+## Data Viz and Anaylsis
+
+### Basic Descriptive Analysis
+```{r message=FALSE, warning=FALSE}
+karyo_long %>%
+  group_by(treatment) %>%
+  summarise(
+    n = n(),
+    `Mean score` = mean(copy_number),
+    `Std.Dev score` = sd(copy_number),
+    `Median score` = median(copy_number),
+    IQR = IQR(copy_number)
+  ) %>% kableExtra::kable()
+```
+
+**Observation:** The descriptive statistics indicate that the mean score for the Control group is 2.33 (SD = 1.10), while the GlucoseDeprived group has a slightly lower mean score of 2.31 (SD = 1.04). Both groups have the same median score of 2 and an interquartile range (IQR) of 1, suggesting a similar distribution of scores across the two treatment conditions. 
+
+### Visualization 
+
+```{r message=FALSE, warning=FALSE}
+
+# Chromosome-wise boxplot
+ggplot(karyo_long, aes(x = treatment, y = copy_number, fill = group)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  facet_wrap(~chromosome, scales = "free_y", ncol = 6) +
+  labs(title = "Chromosome-wise Copy Number by Treatment Group",
+       x = "Treatment Group",
+       y = "Copy Number") +
+  scale_fill_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 10, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+# Chromosome-wise boxplot
+ggplot(karyo_long, aes(x = treatment, y = copy_number, fill = group)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = "Chromosome-wise Copy Number by Treatment Group",
+       x = "Treatment Group",
+       y = "Copy Number") +
+  scale_fill_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 10, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+
+```
+
+**Observation:** From above chart, the distribution of treatment under observation are identical when G1 and G1 are treated as a single treatmenet. 
+
+
+### Heatsmap
+
+Each row in karyo_scaled represents a single cell's genome-wide karyotype profile — one vector of copy number estimates across all chromosomes or regions.
+
+Which means:
+- Each row = one cell
+- Each column = a chromosomal region
+- Each value = estimated copy number for that region in that cell (scaled).
+
+This standardizes the columns (chromosomes):
+- Mean = 0
+- Standard deviation = 1
+
+
+```{r message=FALSE, warning=FALSE}
+# Extract only karyotype numeric data (first N columns)
+karyo_matrix <- as.matrix(karyo_df[, 1:(ncol(karyo_df) - 3)])
+
+# Create annotation for row (group label)
+annotation_row <- data.frame(Group = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+rownames(karyo_matrix) <- karyo_df$cloneID
+
+# Z-score scaling (column-wise standardization)
+karyo_scaled <- scale(karyo_matrix)
+
+# Heatmap
+pheatmap(karyo_scaled,
+         annotation_row = annotation_row,
+         show_rownames = FALSE,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         main = "Karyotype Heatmap by Group",
+         fontsize_row = 6,
+         color = colorRampPalette(c("navy", "white", "firebrick3"))(100))
+```
+
+**Observation:** The karyotype heatmap reveals distinct patterns of chromosomal copy number variation across individual cells from Control and GlucoseDeprived groups. Although cells are clustered based on genome-wide similarity rather than treatment, there is partial segregation, with some clusters enriched for either Control or GlucoseDeprived cells. This suggests that glucose deprivation may induce systematic shifts in karyotype profiles in certain subpopulations. Notably, chromosomes such as V5, V10, V13, and V18 display pronounced deviations from the mean, indicating recurrent copy number losses or gains, particularly in GlucoseDeprived cells. These patterns support the hypothesis that glucose deprivation impacts chromosomal stability, potentially contributing to treatment-induced genomic alterations.
+
+## Hypothesis:
+
+### Levene's Test for Equality of Variances
+
+- **Null hypothesis \( H_0 \):**
+  \[
+  \sigma_1^2 = \sigma_2^2 = \cdots = \sigma_k^2
+  \]
+  The variances are equal across all groups.
+
+- **Alternative hypothesis \( H_1 \):**
+  \[
+  \exists\ i \neq j \ \text{such that} \ \sigma_i^2 \ne \sigma_j^2
+  \]
+  At least one group has a different variance.
+
+```{r}
+leveneTest(copy_number~treatment, data = karyo_long)
+```
+
+**Observation:** Since the **P-value > 0.05 level of significance**, we fail to reject the null hypothesis  and conclude that equality of variance is assummed.
+
+### T-test (If we consider G1 and G2 together)
+**Null Hypothesis (\( H_0 \)):** \( \mu_i = 0 \) for i = 1,2 (There is no significant difference in the overall karyotype profiles between treatment groups (Control, Glucose Deprived))
+
+**Alternative Hypothesis (\( H_a \)):** \( \mu_i \neq 0 \) for i = 1,2 (There is significant difference in the overall karyotype profiles between treatment groups (Control, Glucose Deprived))
+
+```{r message=FALSE, warning=FALSE}
+t.test(copy_number~treatment, data = karyo_long, alternative = "two.sided", var.equal = T)
+```
+**Observation:** Considering G1 and G2 as a single treatement **Glucose Deprived**. An independent sample t-test was conducted to assess the whether there is significant difference in the overall karyotype profiles between treatment groups (Control, Glucose Deprived. We fail to reject the **null hypothesis** since the **p-value > 0.05** level of significance due to insufficent evidence and conclude that there is no significant difference in the overall karyotype profiles between treatment groups (Control, Glucose Deprived.
+
+
+# Objective (G1 and G2 are treated Individually)
+
+To investigate whether distinct glucose deprivation conditions (G1 and G2) result in differential effects on karyotype profiles when compared to the Control group, and to each other. This approach allows for the detection of subtle or divergent genomic responses to different levels or types of nutrient stress.
+
+```{r message=FALSE, warning=FALSE}
+# Define origins and fetch from database
+origins <- c(
+  "SNU-668_G1_A4_seed",
+  "SNU-668_G2_A4_seed",
+  "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed",
+  "SNU-668_C_A4_seed",
+  "SNU-668_C_A24_seed"
+)
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+# Execute and fetch query
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Decode BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(p) / 8, endian = "big")
+})
+
+# Building the karyotype matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+```
+
+## Data Manipulation: 
+
+### Assigning Experimental Groups
+
+- G1 and G2 are kept separate to detect group-specific genomic effects.
+
+- This avoids masking potential differences by lumping all glucose-deprived cells together.
+
+```{r message=FALSE, warning=FALSE}
+#Assigning group (G1, G2, Control) based on origin
+res$group <- ifelse(grepl("_G1", res$origin), "G1",
+                    ifelse(grepl("_G2", res$origin), "G2",
+                           ifelse(grepl("_C", res$origin), "Control", NA)))
+
+
+
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$group <- res$group
+karyo_df$cloneID <- res$cloneID
+
+# Extracting only the karyotype numeric data
+karyo_mat <- as.matrix(karyo_df[, 1:(ncol(karyo_df)-2)])  # assuming last 2 cols are 'group' and 'cloneID'
+
+# Preparing annotation for rows (group labels)
+annotation_row <- data.frame(Group = karyo_df$group)
+rownames(annotation_row) <- karyo_df$cloneID
+rownames(karyo_mat) <- karyo_df$cloneID  # ensure same rownames
+
+```
+
+
+## Data Viz and Descriptive Analysis 
+```{r}
+
+# Generating heatmap with clustering and group annotation
+pheatmap(karyo_mat,
+         scale = "row",                      # standardize rows (chromosome profiles)
+         clustering_distance_rows = "euclidean",
+         clustering_distance_cols = "euclidean",
+         clustering_method = "ward.D2",
+         annotation_row = annotation_row,
+         show_rownames = FALSE,
+         main = "Karyotype Clustering Heatmap (G1, G2, Control)")
+
+```
+**Obseveration:** The karyotype clustering heatmap reveals distinct copy number alteration patterns among the three treatment groups—Control (green), G1 (red), and G2 (blue). Cells are hierarchically clustered based on z-score–normalized copy number profiles, and clear grouping is observed: G1 cells show widespread genomic gains (indicated by orange-red regions), particularly in chromosomes V5, V10, V18, and V20. G2 cells display a similar but less pronounced gain pattern, while Control cells cluster separately and exhibit comparatively stable copy number profiles, with several chromosomes (e.g., V3, V4, V11, V21) showing copy number losses (blue). These patterns suggest that G1 induces greater genomic instability than G2, and both differ markedly from the Control condition.
+
+### Karyotype Instability Score Calculation
+
+To quantify genome-wide chromosomal instability per cell, we calculated a **karyotype score** based on deviations from the normal diploid state (copy number = 2). Specifically, the score for each cell \( i \) is computed as the **sum of the absolute deviations** of copy number values across all chromosomes or genomic regions:
+
+\[
+\text{Score}_i = \sum_j \left| \text{CN}_{ij} - 2 \right|
+\]
+
+Where:
+- \( \text{CN}_{ij} \) is the copy number of chromosome (or bin) \( j \) in cell \( i \)
+- The score increases as the **magnitude and extent of genomic alterations** (gains/losses) increase
+
+```{r message=FALSE, warning=FALSE}
+
+# Computing a summary karyotype score per cell
+# For example, use the sum or mean of absolute deviations from euploid (e.g., 2.0)
+# Assuming values close to 2 are "normal", deviations reflect instability
+karyo_df$karyotype_score <- apply(karyo_df[, 1:(ncol(karyo_df) - 3)], 1, function(x) sum(abs(x - 2)))
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# Creating a boxplot
+ggplot(karyo_df, aes(x = group, y = karyotype_score, fill = group)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6, alpha = 0.8) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = "Karyotype Score by Group",
+       x = "Treatment Group",
+       y = "Total Genomic Instability Score (|copy number - 2| sum)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) +
+  scale_fill_manual(values = c("G1" = "#E69F00", "G2" = "#56B4E9", "Control" = "#009E73"))
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+# Creating a boxplot
+ggplot(karyo_df, aes(x = karyotype_score, fill = group)) +
+  geom_density(, width = 0.6, alpha = 0.8) +
+  labs(title = "Karyotype Score by Group",
+       x = "Treatment Group",
+       y = "Total Genomic Instability Score (|copy number - 2| sum)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) +
+  scale_fill_manual(values = c("G1" = "#E69F00", "G2" = "#56B4E9", "Control" = "#009E73"))
+```
+
+
+### Descriptive analysis:
+```{r message=FALSE, warning=FALSE}
+karyo_df %>%
+  group_by(group) %>%
+  summarise(
+    n = n(),
+    `Mean score` = mean(karyotype_score),
+    `sd score` = sd(karyotype_score),
+    `Median score` = median(karyotype_score),
+    IQR = IQR(karyotype_score)
+  ) %>% kableExtra::kable()
+```
+
+**Observation:** The summary statistics for the three groups: Control, G1, and G2 reveal notable differences in mean scores and distribution. The Control group has the highest mean score of 17.61 (SD = 1.55), while G1 and G2 have lower mean scores of 16.04 (SD = 1.67) and 16.37 (SD = 1.57), respectively. The median score for the Control group is 18, compared to 16 for both G1 and G2, indicating a higher central tendency in the Control group. The interquartile range (IQR) is 2 for both the Control and G1 groups, and slightly narrower (IQR = 1) in the G2 group, suggesting slightly less variability in the middle 50% of scores for G2. 
+
+## Hypothesis
+
+**Null Hypothesis (\( H_0 \)):** \( \mu_i = 0 \) for i = 1,2,3 (There is no significant difference in the overall karyotype profiles between treatment groups (Control, G1, G2))
+
+**Alternative Hypothesis (\( H_a \)):** \( \mu_i \neq 0 \) for i = 1,2,3 (There is significant difference in the overall karyotype profiles between treatment groups (Control, G1, G2))
+
+
+### Suggested Method 1 - MANOVA
+
+
+### Checking MANOVA Assumptions
+
+#### Multivariate Normality (Mardia’s Test) 
+```{r message=FALSE, warning=FALSE}
+library(MVN)
+
+# Extract only the numeric chromosome columns (e.g., columns 1–22)
+karyo_vars <- karyo_df[, 1:22]
+
+# Ensure it's a data frame
+karyo_vars <- as.data.frame(karyo_vars)
+
+mvn_result <- mvn(data = karyo_vars, mvnTest = "mardia")
+mvn_result$multivariateNormality
+```
+
+**Observation:**  Mardia’s skewness and kurtosis p-values are < 0.05, indicating a significant deviation from multivariate normality.
+The overall MVN result is NO — the data does not follow a multivariate normal distribution.
+
+### Homogeneity of Covariance Matrices (Box’s M Test)
+```{r message=FALSE, warning=FALSE}
+library(biotools)
+boxM_result <- boxM(karyo_vars, karyo_df$group)
+boxM_result
+```
+**Observation:** The test result shows an extremely small p-value (< 0.001). Therefore, we reject the null hypothesis that the groups have equal covariance matrices. This confirms that the assumption of homogeneity of covariance matrices is violated.
+
+
+### Multicollinearity (Check Correlation Matrix)
+```{r message=FALSE, warning=FALSE}
+library(corrplot)
+corrplot(cor(karyo_vars), method = "color", type = "upper", tl.cex = 0.6)
+
+```
+**Observation:** The correlation coefficient are significantly lower than 0.9 accross variables. The correlation coefficient is said to be moderate.
+
+### Outliers (Mahalanobis Distance)
+```{r message=FALSE, warning=FALSE}
+m_dist <- mahalanobis(karyo_vars, colMeans(karyo_vars), cov(karyo_vars))
+cutoff <- qchisq(0.999, df = ncol(karyo_vars))
+outliers <- which(m_dist > cutoff)
+length(outliers)
+```
+**Observation:** 8 multivariate outliers were detected using Mahalanobis distance, based on the standard cutoff.
+
+Although multivariate normality and homogeneity of covariance matrices were violated, Pillai’s Trace, which is robust to these violations was used. A small number of multivariate outliers (n = 8) were detected; a sensitivity analysis excluding them showed similar results.
+
+### Recommended 1: MANOVA with Pillai’s Trace (Because of Violation of normaility)
+```{r message=FALSE, warning=FALSE}
+# Step 2: Run MANOVA using Pillai’s Trace (robust to assumption violations)
+manova_model <- manova(as.matrix(karyo_vars) ~ group, data = karyo_df)
+summary(manova_model, test = "Pillai")
+```
+**Result:** There is a statistically significant difference in the overall karyotype profiles across the three treatment groups (Control, G1, and G2) — with Pillai’s Trace = 1.1383, F(44, 186) = 5.3126, p < 0.001.
+
+
+### Recomended 2 Sensitivity Analysis Without Outliers
+```{r message=FALSE, warning=FALSE}
+# Step 3: Identify Mahalanobis outliers (if not already done)
+m_dist <- mahalanobis(karyo_vars, colMeans(karyo_vars), cov(karyo_vars))
+cutoff <- qchisq(0.999, df = ncol(karyo_vars))
+outliers <- which(m_dist > cutoff)
+
+# Step 4: Remove outliers
+karyo_df_clean <- karyo_df[-outliers, ]
+karyo_vars_clean <- karyo_df_clean[, 1:22]
+
+# Step 5: Run MANOVA again on cleaned data
+manova_model_clean <- manova(as.matrix(karyo_vars_clean) ~ group, data = karyo_df_clean)
+
+summary(manova_model_clean, test = "Pillai")
+```
+
+**Observation:** MANOVA was performed using Pillai’s Trace to assess differences in multivariate karyotype profiles across Control, G1, and G2 groups. Given the violation of multivariate normality and unequal covariance matrices, Pillai’s Trace was selected for its robustness. Sensitivity analysis excluding 8 multivariate outliers produced consistent results.
+
+**Result:** There is a statistically significant difference in the overall karyotype profiles across the three treatment groups (Control, G1, and G2)  with Pillai’s Trace = 1.1383, F(44, 170) = 5.10, p < 0.001.
+
+
+### Pairwise MANOVA using Pillai’s Trace
+
+```{r message=FALSE, warning=FALSE}
+# Get unique group pairs
+groups <- unique(karyo_df_clean$group)
+pairs <- combn(groups, 2, simplify = FALSE)
+
+# Run pairwise MANOVAs
+for (pair in pairs) {
+  cat(">>", pair[1], "vs", pair[2], "\n")
+  
+  sub_df <- karyo_df_clean[karyo_df_clean$group %in% pair, ]
+  sub_vars <- sub_df[, 1:22]  # adjust if needed
+  
+  # Run Pillai MANOVA for the pair
+  tryCatch({
+    manova_pair <- manova(as.matrix(sub_vars) ~ group, data = sub_df)
+    print(summary(manova_pair, test = "Pillai"))
+  }, error = function(e) {
+    cat("Error:", conditionMessage(e), "\n\n")
+  })
+}
+
+```
+**Observation:** Following a significant overall MANOVA result, pairwise comparisons were conducted using Pillai’s Trace to identify which treatment groups differed in their multivariate karyotype profiles. The analysis revealed a significant difference between Control and G2 (Pillai’s Trace = 0.788, F(22, 47) = 7.94, p < 0.001), and also between G1 and G2 (Pillai’s Trace = 0.625, F(22, 54) = 4.09, p < 0.001), indicating that both glucose-deprived conditions induced distinct karyotypic alterations. However, the comparison between Control and G1 failed due to a numerical error, likely caused by insufficient group variation or dimensional instability in that subset.
+
+
+```{r}
+# PCA
+pca <- prcomp(karyo_df[, 1:22], scale. = TRUE)
+
+# Create PCA plot
+pca_df <- as.data.frame(pca$x)
+pca_df$group <- karyo_df$group
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = group)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(title = "PCA of Karyotype Profiles",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  scale_color_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+  theme_minimal()
+
+```
+
+
+### PCA-Based Visualization of MANOVA
+
+```{r message=FALSE, warning=FALSE}
+# Run PCA
+pca <- prcomp(karyo_vars_clean, scale. = TRUE)
+
+# Build PCA data frame
+pca_df <- as.data.frame(pca$x)
+pca_df$group <- karyo_df_clean$group
+
+# Plot PC1 vs PC2 with group colors
+library(ggplot2)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = group)) +
+  geom_point(size = 2, alpha = 0.7) +
+  stat_ellipse(level = 0.95, linetype = "dashed") +
+  labs(
+    title = "PCA of Karyotype Profiles by Group",
+    x = paste0("PC1 (", round(summary(pca)$importance[2, 1] * 100, 1), "%)"),
+    y = paste0("PC2 (", round(summary(pca)$importance[2, 2] * 100, 1), "%)")
+  ) +
+  scale_color_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+  theme_minimal(base_size = 13) 
+
+
+```
+
+**Observation:** PCA of genome-wide copy number profiles showed clear separation between G1, G2, and Control groups along the first two principal components. G1 cells clustered away from Control with broader dispersion, suggesting more variable karyotypic changes. The ellipses confirmed minimal overlap, supporting the MANOVA result that treatment conditions are associated with distinct karyotype profiles.
+
+
+
+
+# Objective: (G1 and G2 are treated Individually)
+
+Use multilevel modeling to test whether G1 and G2 (glucose deprivation conditions) produce different karyotype effects compared to Control, while accounting for origin-level variation.
+
+### Multilevel Modeling
+### Model Design
+
+- **Dependent Variable**: `karyotype_score` = sum of absolute deviations from diploid state across all chromosomes
+- **Fixed Effect**: `group` (Control, G1, G2)
+- **Random Effect**: `origin` (to account for multiple cells from the same source)
+
+\[
+\text{karyotype\_score}_{ij} = \beta_0 + \beta_1 \cdot \text{group}_{j} + u_i + \epsilon_{ij}
+\]
+
+Where:
+- \( u_i \sim \mathcal{N}(0, \sigma^2_u) \) is the random intercept for `origin`
+- \( \epsilon_{ij} \sim \mathcal{N}(0, \sigma^2) \) is the residual error.
+
+
+### Compute Karyotype Score
+```{r message=FALSE, warning=FALSE}
+
+names(karyo_df)
+karyo_df$karyotype_score <- apply(karyo_df[, 1:22], 1, function(x) sum(abs(x - 2)))
+karyo_df$origin <- res$origin
+karyo_df$origin <- factor(karyo_df$origin)
+
+karyo_df_clean$origin <- karyo_df$origin[rownames(karyo_df_clean)]
+
+# Ensure treatment group and origin are factors
+karyo_df$group <- factor(karyo_df$group, levels = c("Control", "G1", "G2"))
+karyo_df$origin <- factor(karyo_df$origin)
+```
+
+### Fit Multilevel Model
+```{r message=FALSE, warning=FALSE}
+# Linear mixed-effects model: random intercept for origin
+model <- lmer(karyotype_score ~ group + (1 | origin), data = karyo_df)
+
+# Summary of the model
+summary(model)
+
+```
+**Observation:** A linear mixed-effects model was fitted to investigate the effect of treatment group (Control, G1, G2) on overall genomic instability, as measured by the karyotype score. The model included group as a fixed effect and origin as a random intercept to account for variability across experimental sources. The random effect variance for origin was estimated at 0.15, suggesting moderate variation between origins, while residual variance was higher at 2.48, indicating greater within-origin variability among cells. The model intercept, representing the mean karyotype score for the Control group, was 17.59 (p < 0.001). The G1 group had a lower estimated karyotype score by 1.56 units compared to Control, with a marginal p-value of 0.058, suggesting a potential but not statistically significant reduction. The G2 group also had a lower mean score (−1.22 units) compared to Control, though this difference was not statistically significant (p = 0.105).
+
+
+**NOTE** No further analysis can be done since the multilevel model show insignificance.
+
+**NOTE:** Although the multilevel model did not detect statistically significant differences in karyotype score between treatment groups, the observed trend toward reduced genomic instability in G1 and G2 is consistent with the significant multivariate differences detected by MANOVA. 
+
+### Possible way out: 
+
+- Option 1: Treat origin as fixed effect
+```{r message=FALSE, warning=FALSE}
+# Step 1: Extract only the chromosome data for Mahalanobis distance
+karyo_vars <- karyo_df[, 1:22]
+
+# Step 2: Compute Mahalanobis distance
+m_dist <- mahalanobis(karyo_vars, colMeans(karyo_vars), cov(karyo_vars))
+cutoff <- qchisq(0.999, df = ncol(karyo_vars))
+
+# Step 3: Identify outlier row indices
+outliers <- which(m_dist > cutoff)
+
+# Step 4: Remove outliers from FULL dataset (including origin/group)
+karyo_df_clean <- karyo_df[-outliers, ]
+
+# Step 5: Recalculate karyotype_score
+karyo_df_clean$karyotype_score <- apply(karyo_df_clean[, 1:22], 1, function(x) sum(abs(x - 2)))
+
+# Step 6: Ensure group and origin are proper factors
+karyo_df_clean$group <- factor(karyo_df_clean$group)
+karyo_df_clean$origin <- factor(karyo_df_clean$origin)
+karyo_df_clean <- droplevels(karyo_df_clean)
+
+# Check levels again
+table(karyo_df_clean$origin)
+nlevels(karyo_df_clean$origin)
+
+# Fit linear model with origin as fixed effect
+lm_model <- lm(karyotype_score ~ group + origin, data = karyo_df_clean)
+
+# Model summary and ANOVA
+summary(lm_model)
+Anova(lm_model, type = 2)
+```
+
+**Observation:** There is strong evidence that treatment group G1 is associated with a significant reduction in karyotype score compared to the Control group, even after accounting for sample origin. However, the G2 group does not differ significantly from the Control. While some sample origins show slight effects, none are statistically significant overall.
+
+**NOTE** I am having some NA's at the posthoc test before this Fixed Effect and Also in the fixed effect which i am still checking if the problem isn't from my assumption. **If everything is properly write I think MANOVA is the only statistical test that shows statistical significance!!!**
+
+
+
+# Decision FlowChart:
+```{r}
+data <- tibble::tibble(from = c("Karyotype Data", "Karyotype Data", "G1 & G2\n are\n combined", "G1 and G2\n are \n independent", "G1 and G2\n are \n independent", "MANOVA", "p-value < 0.05","MM","p-values\ninsignificant", "LM with origin as\nFE"),
+                       to = c("G1 & G2\n are\n combined","G1 and G2\n are \n independent",  "t-test", "MANOVA", "MM" , "p-value < 0.05", "PostHoc Analysis", "p-values\ninsignificant","LM with origin as\nFE","MANOVA"))
+
+ggflowchart(data,colour = "red",
+            text_colour = "black",
+            arrow_colour = "blue",
+            family = "serif",
+            x_nudge = 0.25)+labs(caption = "MM = Multilevel Model,LM = Linear Model, FE = Fixed Effects, MANOVA = Multivariate Analysis of Variance", title = "Decision Flowchart", subtitle = "for T-test vs. Multivariate Analysis Based on Treatment Design",
+                                 x = NULL, y = NULL)+ 
+  theme_minimal()+ 
+  theme(axis.text = element_blank(), 
+        axis.ticks = element_blank())
+  
+```

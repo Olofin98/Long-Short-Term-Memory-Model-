@@ -1,0 +1,174 @@
+---
+title: "Homework 9"
+author: "Moshood Abiola"
+date: "2025-09-25"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## (1.) This problem will step you through fitting a regression tree model and making a prediction
+
+### (a.) Use the Cars93 dataset in the MASS library. Create a tree for predicting Price from
+Horsepower, Weight, Length, whether a car has AirBags, and the Origin of production.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(MASS)
+library(rpart)
+library(rpart.plot)
+
+# Build regression tree
+fit_model <- rpart(Price ~ Horsepower + Weight + Length + AirBags + Origin, 
+             data = Cars93, method = "anova")
+
+# Visualize
+rpart.plot(fit_model)
+
+```
+
+
+### (b.) Predict the price of a car with 200 horsepower, weighs 2705 pounds, is 177 inches long, has
+driver and passenger airbags, and was not made in the US.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+newcar_data <- data.frame(Horsepower = 200,
+                     Weight = 2705,
+                     Length = 177,
+                     AirBags = "Driver & Passenger",
+                     Origin = "non-USA")
+
+predict(fit_model, newdata = newcar_data)
+
+```
+
+
+### (c.) Use `plotcp()` to decide on an optimal cp value. You have a little flexibility in your choice, but explain why you picked the one you did. Use `prune()` to apply the chosen cp, and plot the pruned tree.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Pick cp
+printcp(fit_model)   # shows table
+plotcp(fit_model)    # visualize
+
+# Suppose cp = 0.02 looks optimal
+pruned <- prune(fit_model, cp = 0.02)
+
+# Plot pruned tree
+rpart.plot(pruned)
+
+```
+
+## 2. (Grad student only) I wrote most of a function to implement Algorithm 9.2, but left the innermost parts out. I also provided two functions to aid the construction and retrieval of all subsets of levels of a categorical variable.
+
+### (a.) Complete the function 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+# I fix the first level on the LEFT to avoid duplicates like {A}|{B,C} and {B,C}|{A}.
+level_partitions <- function(levels_vec) {
+  L <- sort(unique(levels_vec)); k <- length(L)
+  if (k <= 1) return(list())
+  first <- L[1]; others <- L[-1]
+  out <- list()
+  # iterate all subsets of 'others'; exclude empty (only {first}) and full (all levels)
+  for (m in 1:(2^(k-1) - 1)) {
+    pick <- as.logical(intToBits(m))[seq_along(others)]
+    left <- c(first, others[pick])
+    if (length(left) < k) out[[length(out) + 1]] <- left
+  }
+  out
+}
+
+# Weighted mean and weighted SSE
+wmean <- function(x, w) sum(w * x) / sum(w)
+wsse  <- function(x, w) { mu <- wmean(x, w); sum(w * (x - mu)^2) }
+
+
+best_split_alg9_2 <- function(X, y,
+                              weights  = NULL,
+                              minsplit = 2,     # small defaults for classroom toy data
+                              minbucket = NULL,
+                              cp = 0) {
+  n <- length(y)
+  if (is.null(weights)) weights <- rep(1, n)
+  if (n < minsplit) return(NULL)
+  if (is.null(minbucket)) minbucket <- max(1, floor(minsplit / 3))
+
+  # 1) baseline goodness = SSE of parent node
+  sse_parent <- wsse(y, weights)
+
+  # initialize
+  best <- list(goodness = Inf, split_var = NA, split_val = NA,
+               left_idx = integer(0), right_idx = integer(0),
+               improvement = 0, type = NA)
+
+  # 2) loop over columns of X
+  for (j in seq_len(ncol(X))) {
+    xj <- X[[j]]
+
+    # (a) numeric
+    if (is.numeric(xj)) {
+      ux <- sort(unique(xj))
+      if (length(ux) > 1) {
+        mids <- (ux[-1] + ux[-length(ux)]) / 2
+        for (thr in mids) {
+          L <- which(xj <= thr); R <- which(xj > thr)
+          if (length(L) < minbucket || length(R) < minbucket) next
+          sse_LR <- wsse(y[L], weights[L]) + wsse(y[R], weights[R])
+          improve <- sse_parent - sse_LR
+          if (sse_LR < best$goodness && improve >= cp * sse_parent) {
+            best <- list(goodness = sse_LR, split_var = names(X)[j],
+                         split_val = thr, left_idx = L, right_idx = R,
+                         improvement = improve, type = "numeric")
+          }
+        }
+      }
+
+    # (b) categorical
+    } else {
+      levs <- unique(xj)
+      if (length(levs) > 1) {
+        parts <- level_partitions(levs)
+        for (left_levels in parts) {
+          L <- which(xj %in% left_levels); R <- setdiff(seq_len(n), L)
+          if (length(L) < minbucket || length(R) < minbucket) next
+          sse_LR <- wsse(y[L], weights[L]) + wsse(y[R], weights[R])
+          improve <- sse_parent - sse_LR
+          if (sse_LR < best$goodness && improve >= cp * sse_parent) {
+            best <- list(goodness = sse_LR, split_var = names(X)[j],
+                         split_val = left_levels, left_idx = L, right_idx = R,
+                         improvement = improve, type = "categorical")
+          }
+        }
+      }
+    }
+  }
+
+  if (is.infinite(best$goodness)) return(NULL)
+  best
+}
+```
+
+
+### 2.b Test the completed function on the toy dataset in Example 9.1 and ensure it returns the same
+answer we obtained by hand
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create the toy dataset
+X_1 <- c(2, 8, 4, 3, 6)
+X_2 <- factor(c("Red", "Green", "Red", "Blue", "Green"))
+Y   <- c(3, 10, 5, 3, 6)
+toyX <- data.frame(X_1 = X_1, X_2 = X_2)
+
+# Run Algorithm 9.2
+ans <- best_split_alg9_2(toyX, Y, minsplit = 2, minbucket = 1, cp = 0)
+
+# Report
+cat("split_var :", ans$split_var, "\n")
+cat("split_val :", if (is.numeric(ans$split_val)) ans$split_val else paste(ans$split_val, collapse=", "), "\n")
+cat("goodness  :", round(ans$goodness, 4), "\n")
+cat("left idx  :", paste(ans$left_idx, collapse = " "), "\n")
+cat("right idx :", paste(ans$right_idx, collapse = " "), "\n")
+
+```
+

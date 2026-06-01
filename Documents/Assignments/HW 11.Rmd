@@ -1,0 +1,143 @@
+---
+title: "Home work 11"
+author: "Moshood A Garuba"
+date: "2025-10-10"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+
+Use the `Cars93` dataset in the MASS library. Create a linear model for predicting Price from Horsepower, Weight, Length, whether a car has AirBags, and the Origin of production. Use it to predict the price of a car with 200 horsepower, weighs 2705 pounds, is 177 inches long, has driver and passenger airbags, and was not made in the USA.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(MASS)
+df <- Cars93
+
+lm_model <- lm(Price ~ Horsepower + Weight + Length + AirBags + Origin, data = df)
+
+summary(lm_model)
+
+```
+
+## Question 2
+
+(Grad student only) Obtain regression coefficients for the model in problem 1), but using gradient descent. They should be practically equivalent. Use the grad_descent() and lin_reg() functions I have provided.
+
+Hint: To deal with the categorical predictors, you need to make a binary column for each level that is not the default. The value should be 1 if the observation is in that category and 0 otherwise. So you can check your work, here is what the first several rows of the data matrix should look like. The tools I used are `cbind()`, `==`comparison between a dataframe column referenced by $ and a string, and
+the fact that logicals can be implicitly coerced to numeric.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Check factor levels (for reference)
+levels(Cars93$AirBags)
+levels(Cars93$Origin)
+
+
+new_car <- data.frame(
+  Horsepower = 200,
+  Weight = 2705,
+  Length = 177,
+  AirBags = "Driver & Passenger",
+  Origin = "non-USA"
+)
+
+
+
+predicted_price <- predict(lm_model, newdata = new_car)
+predicted_price
+
+
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+X <- cbind(
+  1,  # Intercept column
+  Cars93$Horsepower,
+  Cars93$Weight,
+  Cars93$Length,
+  as.numeric(Cars93$AirBags == "Driver only"),
+  as.numeric(Cars93$AirBags == "None"),
+  as.numeric(Cars93$Origin == "non-USA")
+)
+
+Y <- Cars93$Price
+
+# Assign column names (for clarity only)
+colnames(X) <- c("Intercept", "Horsepower", "Weight", "Length",
+                 "AirBags_DriverOnly", "AirBags_None", "Origin_nonUSA")
+
+
+
+#  Define gradient descent and linear regression functions
+
+grad_descent <- function(func, grad_func, eta, threshold, x0,
+                         show_plot = FALSE, X, Y) {
+  x <- x0
+  keep_going <- TRUE
+  iter <- 0
+  
+  while (keep_going) {
+    grad <- grad_func(x, X, Y)
+    new_x <- x - eta * grad
+    iter <- iter + 1
+
+    if (sqrt(sum(grad^2)) < threshold) {
+      keep_going <- FALSE
+    }
+    x <- new_x
+  }
+  
+  cat("Converged after", iter, "iterations.\n")
+  cat("Local minimum of", func(x, X, Y), "found at:\n")
+  print(x)
+  
+  return(list(min_location = x, min_value = func(x, X, Y)))
+}
+
+
+lin_reg <- function(X, Y, eta = .001, threshold = .001,
+                    beta0 = rep(0, ncol(X)), show_plot = FALSE) {
+  func <- function(beta, X, Y) {
+    sum((Y - X %*% beta) ^ 2)
+  }
+  grad_func <- function(beta, X, Y) {
+    -2 * t(X) %*% (Y - X %*% beta)
+  }
+  
+  # Standardize X (except intercept) and Y
+  Xsc <- cbind(1, scale(X[, -1]))
+  Ysc <- scale(Y)
+  
+  # Run gradient descent
+  gd_out <- grad_descent(func, grad_func, eta, threshold, beta0,
+                         show_plot = show_plot, X = Xsc, Y = Ysc)
+  
+  beta_sc <- gd_out$min_location
+  
+  # Convert back to unstandardized coefficients
+  beta <- c(
+    sum(-beta_sc[-1] * colMeans(X)[-1] * sd(Y) / apply(X, 2, sd)[-1]) + mean(Y),
+    beta_sc[-1] * sd(Y) / apply(X, 2, sd)[-1]
+  )
+  
+  cat("\nUnstandardized regression coefficients:\n")
+  print(beta)
+  
+  return(beta)
+}
+
+
+# Run gradient descent regression
+beta_gd <- lin_reg(X, Y, eta = 0.001, threshold = 0.001)
+
+
+# Compare with ordinary least squares
+model_lm <- lm(Price ~ Horsepower + Weight + Length + AirBags + Origin, data = Cars93)
+summary(model_lm)$coefficients
+```
+

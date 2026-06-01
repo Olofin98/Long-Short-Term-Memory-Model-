@@ -1,0 +1,7 @@
+age,mentalhealth_score,jobsatisfaction_score,workload_score,agecat,marital_status,children,female,hoursworked,married
+29,34,10,44,25-29yrs,2.0,0,1,80,1
+38,34,9,40,35-39yrs,2.0,2,0,50,1
+30,33,9,44,30-34yrs,1.0,0,0,70,0
+31,24,5,44,30-34yrs,2.0,0,0,91,1
+31,31,5,44,30-34yrs,2.0,0,0,90,1
+31,31,6,39,30-34yrs,2.0,1,0,72,1

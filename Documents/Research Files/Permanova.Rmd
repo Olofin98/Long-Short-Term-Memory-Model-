@@ -1,0 +1,1022 @@
+---
+title: "Permanova"
+author: "Olofin Daniel"
+date: "2025-06-06"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, fig.width = 7, fig.height = 5)
+```
+
+```{r eval=FALSE, include=FALSE}
+##Noemi has added you to the cloneid database, believe danielolofin is your username 
+## and Karyotyping_Analysis is the password. Access is only possible when you are on the Moffitt network.
+## If you email Noemi your home IP and/or moffitt guest IP she can give you access on those networks too.
+
+#create user 'danielolofin'@'206.81.166.156' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'206.81.166.156';  
+#create user 'danielolofin'@'192.168.1.32' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'192.168.1.32';  
+
+```
+
+```{r include=FALSE}
+# Libraries
+library(RMariaDB)
+library(DBI)
+library(tidyverse)
+library(dplyr)  
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+library(lme4)     # for linear mixed models
+library(lmerTest) # for p-values in lmer
+library(emmeans)  # for posthoc comparisons
+library(ggflowchart)
+library(car)
+library(sjPlot)
+library(webshot)
+library(stargazer)
+library(factoextra)
+library(FactoMineR)
+library(vegan)
+
+```
+
+```{r include=FALSE}
+
+db <- dbConnect(MariaDB(), dbname="CLONEID", 
+                host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com", 
+                user="danielolofin",
+                  password="Karyotyping_Analysis")
+
+```
+
+```{r include=FALSE}
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+
+```
+
+```{r include=FALSE}
+dbListFields(db,"Perspective") ##karyotype data is in here.
+```
+
+```{r include=FALSE}
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+```
+
+```{r include=FALSE}
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+```
+
+```{r include=FALSE}
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the 
+## passaging table.
+
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+```
+
+```{r include=FALSE}
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+```
+
+```{r include=FALSE}
+# Define origins and build query
+origins <- c(
+  "SNU-668_R1_A55_seedT1", "SNU-668_R3_A55_seedT1", "SNU-668_K1_A34_seedT1",
+  "SNU-668_K2_A34_seedT1", "SNU-668_K3_A34_seedT1", "HGC-27_RevG_A9-F_seed",
+  "HGC-27_RevG2_A7-F_seed", "SNU-668_G1_A4_seed", "SNU-668_G2_A4_seed",
+  "HGC-27_RevC_A45_seed", "SNU-668_RevG_A3_seed", "SNU-668_P2_A18k_seed",
+  "SNU-668_P0_A11K_seed", "SNU-668_r2_A55_seedT1", "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed", "SNU-668_RevG_A10_seed", "HGC-27_G1_A9-F_seed",
+  "HGC-27_G2_A9_harvesT155", "HGC-27_G2_A9-F_seed", "HGC-27_G1_A9_harvesT155",
+  "HGC-27_RevG_A9_harvesT149", "HGC-27_RevG2_A8_seed", "MDA-MB-231_P_A2_harvest",
+  "HGC-27_C_A45_seed", "SNU-668_RevC_A27_seed", "SNU-668_C_A24_seed",
+  "SNU-668_C_A4_seed", "SNU-668_RevC_A3_seed", "MDA-MB-231_RPMI_A12_VT2_seed",
+  "SNU-668_P1_A18K_seed", "SNU-668_O1_A3_exp_seedT4", "SNU-668_O2_A3_exp_seedT4",
+  "HGC-27_P1_A18K_harvest", "HGC-27_P2_A18K_harvest", "SUM159_NLS_4N_O1_A7K_harvest",
+  "SUM159_NLS_2N_O1_A7K_harvest", "SUM-159_NLS_4N_A5M_K_harvest",
+  "SUM159_NLS_4N_O2_A7K_harvest", "SUM159_NLS_2N_O2_A7K_harvest",
+  "SUM-159_NLS_2N_A7M_K_harvest"
+)
+
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+ q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+
+
+# Fetch data from the database
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+```
+
+```{r include=FALSE}
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+
+
+res$treatment <- ifelse(grepl("_G1", res$origin), "G1",
+              ifelse(grepl("_G2", res$origin), "G2",
+              ifelse(grepl("_C", res$origin), "Control",
+              ifelse(grepl("_P1", res$origin), "P1",
+              ifelse(grepl("_P2", res$origin), "P2",
+              ifelse(grepl("_RevC", res$origin), "RevC",
+              ifelse(grepl("_RevG", res$origin), "RevG",
+              ifelse(grepl("_RevG2", res$origin), "RevG2",
+              ifelse(grepl("_O1", res$origin), "O1",
+              ifelse(grepl("_O2", res$origin), "O2",
+              ifelse(grepl("_P0", res$origin), "P0",
+              ifelse(grepl("_R1", res$origin), "R1",
+              ifelse(grepl("_R2", res$origin), "R2",
+              ifelse(grepl("_R3", res$origin), "R3",
+              ifelse(grepl("_K1", res$origin), "K1",
+              ifelse(grepl("_K2", res$origin), "K2",
+              ifelse(grepl("_K3", res$origin), "K3",
+              ifelse(grepl("_P", res$origin), "P",
+              ifelse(grepl("_r2", res$origin), "R2",
+              ifelse(grepl("_K", res$origin), "K",
+              ifelse(grepl("_RPMI", res$origin), "RPMI",
+                     NA)))))))))))))))))))))
+
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$cloneID <- res$cloneID
+karyo_df$line<- res$sampleSource
+karyo_df$replicate_id<- res$origin
+
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyr)
+library(ggplot2)
+
+# Convert to long format for ggplot2
+karyo_long <- karyo_df %>%
+  pivot_longer(cols = starts_with("V"),
+               names_to = "chromosome",
+               values_to = "count")
+
+# Boxplot for all chromosomes, faceted
+ggplot(karyo_long, aes(x = treatment, y = count, fill = treatment)) +
+  geom_boxplot(outlier.shape = NA) +
+  facet_wrap(~chromosome, scales = "free_y", ncol = 6) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Chromosome Counts by Treatment",
+       y = "Chromosome Count")
+
+```
+
+```{r echo=FALSE}
+# Compute total chromosome per cell
+karyo_df$total_chr <- rowSums(karyo_df[, paste0("V", 1:22)])
+
+# Histogram of total chromosome count
+ggplot(karyo_df, aes(x = total_chr, fill = treatment)) +
+  geom_histogram(binwidth = 1, color = "black", position = "identity", alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Total Chromosome Count per Cell",
+       x = "Total Chromosomes",
+       y = "Number of Cells")
+
+```
+
+```{r}
+# Mean per chromosome per treatment
+mean_chr <- karyo_long %>%
+  group_by(treatment, chromosome) %>%
+  summarise(mean_count = mean(count, na.rm = TRUE), .groups = "drop")
+
+ggplot(mean_chr, aes(x = chromosome, y = mean_count, fill = treatment)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Mean Chromosome Count per Treatment",
+       y = "Mean Count")
+
+```
+
+```{r}
+library(pheatmap)
+
+# Make a cell-by-chromosome matrix
+karyo_mat <- as.matrix(karyo_df[, paste0("V", 1:22)])
+rownames(karyo_mat) <- karyo_df$cloneID
+
+# Simple heatmap
+pheatmap(karyo_mat[1:50, ], cluster_rows = TRUE, cluster_cols = TRUE, 
+         main = "Chromosome Profiles (Subset of Cells)",
+         show_rownames = FALSE)
+
+```
+
+```{r include=FALSE}
+# Load necessary libraries
+library(vegan)
+library(dplyr)
+library(ggplot2)
+  
+# Step 1: Create the matrix of chromosome features
+karyo_mat <- as.matrix(karyo_df[, paste0("V", 1:22)])
+
+# Step 2: Collapse cell-level karyotypes into flask-level centroids (mean chromosome profile)
+flask_centroids <- rowsum(karyo_mat, group = karyo_df$replicate_id) / ø
+                   as.vector(table(karyo_df$replicate_id))
+
+# Step 3: Create unique metadata at the flask level
+meta_flask <- karyo_df %>%
+  select(replicate_id, treatment, line) %>%
+  distinct()
+
+# Step 4: Compute pairwise distance matrix between flask karyotype profiles
+dist_flask <- vegdist(flask_centroids, method = "manhattan")
+```
+
+```{r}
+# Step 5: Run PERMANOVA — testing treatment effect after accounting for cell line differences
+adonis2(dist_flask ~ line + treatment,
+        data = meta_flask,
+        strata = meta_flask$line,      # Keep permutations within each line
+        permutations = 999)
+```
+
+**Interpretation:** In this analysis, we tested whether different treatment conditions led to statistically significant changes in karyotype composition across independently cultured flasks, while controlling for variation due to cell lines. The PERMANOVA result (F = 3.296, p = 0.638, $R^{2}$ = 0.767) indicates that although the model explains a large proportion of the variance in karyotype profiles (77%), this variation is primarily attributed to inherent differences between cell lines rather than treatment effects. The high p-value (\> 0.05) suggests there is no statistically significant treatment effect on global karyotype composition at the flask level. Thus, under the current design and data structure, the treatments applied did not induce reproducible, detectable changes in the overall chromosome profiles when adjusting for baseline variability across cell lines.
+
+-   2: GLMM for Per-Chromosome Changes
+
+```{r}
+library(lme4)
+
+# Binary outcome: gain defined as >2 copies
+karyo_df$gain_chr08 <- ifelse(karyo_df$V8 > 2, 1, 0)
+
+# GLMM: treatment as fixed effect, replicate as random effect
+model_chr8 <- glmer(gain_chr08 ~ treatment + (1 | replicate_id), 
+                    data = karyo_df, family = binomial)
+
+summary(model_chr8)
+
+```
+
+```{r}
+# Step 6: Test if treatment affects karyotype variability (dispersion)
+disp_test <- betadisper(dist_flask, group = meta_flask$treatment, bias.adjust = TRUE)
+anova(disp_test)
+
+```
+
+**Intepretation:** We assessed the assumption of homogeneity of multivariate dispersions using the betadisper() function. The analysis revealed no significant difference in the variability of karyotype composition across treatment groups (F(9, 22) = 0.94, p = 0.513), indicating that group dispersions are comparable. This supports the validity of our PERMANOVA results, as the observed group differences are unlikely to be driven by unequal dispersion.
+
+```{r}
+# Step 7: Visualize results using PCoA (ordination plot)
+pcoa <- cmdscale(dist_flask, eig = TRUE, k = 2)
+pcoa_df <- data.frame(PC1 = pcoa$points[,1],
+                      PC2 = pcoa$points[,2],
+                      treatment = meta_flask$treatment,
+                      line = meta_flask$line)
+
+ggplot(pcoa_df, aes(x = PC1, y = PC2, color = treatment, shape = line)) +
+  geom_point(size = 4) +
+  theme_minimal() +
+  ggtitle("PCoA of Karyotype Profiles (Flask Centroids)")
+
+```
+
+```{r}
+# Load libraries
+library(ggplot2)
+library(vegan)
+library(dplyr)
+
+# Assume these data frames are already created:
+# - flask_centroids: the averaged chromosome profile for each replicate_id
+# - meta_flask: metadata with columns replicate_id, line, treatment
+
+# Merge centroids and metadata
+flask_data <- cbind(meta_flask, flask_centroids)
+
+# Scale chromosome features
+scaled_centroids <- scale(flask_centroids)
+
+#  PCA
+pca_res <- prcomp(scaled_centroids)
+
+# Add PCA scores to data frame
+pca_df <- as.data.frame(pca_res$x[, 1:2])
+pca_df <- cbind(meta_flask, pca_df)
+
+# Plot PCA
+ggplot(pca_df, aes(x = PC1, y = PC2, color = treatment, shape = line)) +
+  geom_point(size = 4) +
+  labs(title = "PCA of Karyotype Profiles (Flask Centroids)",
+       x = "PC1", y = "PC2") +
+  theme_minimal()
+
+```
+
+```{r}
+# MDS using Manhattan Distance
+
+# Compute Manhattan distance
+dist_flask <- vegdist(flask_centroids, method = "manhattan")
+
+# Classical MDS (PCoA)
+mds <- cmdscale(dist_flask, k = 2, eig = TRUE)
+mds_df <- data.frame(MDS1 = mds$points[,1], MDS2 = mds$points[,2])
+mds_df <- cbind(meta_flask, mds_df)
+
+# Plot MDS
+ggplot(mds_df, aes(x = MDS1, y = MDS2, color = treatment, shape = line)) +
+  geom_point(size = 4) +
+  labs(title = "MDS of Karyotype Profiles (Manhattan Distance)",
+       x = "MDS1", y = "MDS2") +
+  theme_minimal()+
+  theme()
+
+```
+
+## Findings:
+
+Following best practices for single-cell karyotype analysis, we aggregated profiles at the replicate (flask) level and performed PERMANOVA to assess whether treatment influences global karyotype composition, adjusting for baseline differences across cell lines and restricting permutations within lines. To validate the test’s assumptions, we assessed the homogeneity of dispersion using betadisper(). The result (F = 0.94, p = 0.513) indicated no significant difference in within-group variability across treatments, confirming that PERMANOVA assumptions were met. Thus, any detected differences—or lack thereof—in karyotype composition across treatments can be confidently interpreted as genuine shifts in group centroids rather than variability artifacts.
+
+# Next Step:
+
+1.  Fit GLMMs on individual chromosome gains/losses
+
+-   **Reason:** PERMANOVA looks at overall karyotype composition, but it can miss changes that occur only in specific chromosomes. So we fit Generalized Linear Mixed Models (GLMMs) to ask: **Does treatment X increase the odds of gaining chromosome 8, for example?**
+
+```{r}
+library(lme4)
+library(dplyr)
+
+# Example for Chromosome 8 gain (assuming you have a binary column)
+# Replace 'gain_chr08' with the correct column name in your data
+glmm_chr8 <- glmer(gain_chr08 ~ treatment + (1 | replicate_id), 
+                   data = karyo_df, 
+                   family = binomial)
+
+summary(glmm_chr8)
+
+```
+
+**Intepretation:** The GLMM analysis of chromosome 8 gain across treatments, while adjusting for flask-level variation, shows a statistically significant reduction in gain probability under treatment K ($\rho$ = 0.048). Other treatments did not show statistically significant effects. A notable variance among replicate flasks ($\sigma^{2}$ = 3.525) supports the use of a mixed model. However, the model failed to converge fully, suggesting potential overparameterization or sparse group sizes—this warrants careful reevaluation or model simplification.
+
+2.  Subgroup Analysis: Within a Cell Line (e.g., SNU-668 only) -**Reason:** Our original design included multiple cell lines. If those lines respond differently to treatment, a global model can hide important differences. By running PERMANOVA within each line, we ask:**Does the treatment shift karyotype composition in SNU-668 (or HGC-27) specifically?**
+
+```{r}
+for (cell_line in unique(karyo_df$line)) {
+  cat("\n\n### Cell Line:", cell_line, "###\n")
+  line_df <- subset(karyo_df, line == cell_line)
+  line_mat <- vegdist(as.matrix(line_df[, 1:22]), method = "manhattan")
+  
+  print(adonis2(line_mat ~ treatment, 
+                data = line_df, 
+                permutations = 999))
+}
+
+```
+**Interpretation:**
+We performed separate PERMANOVA analyses within each cell line to assess whether treatment influenced global karyotype composition. The results revealed statistically significant differences across treatment groups in HGC-27 (R² = 0.179, F = 8.03, p = 0.001), MDAMB231 (R² = 0.197, F = 9.83, p = 0.001), and SNU-668 (R² = 0.217, F = 7.09, p = 0.001), suggesting that treatment was associated with distinct karyotypic profiles in these lines. In contrast, no significant treatment effect was observed in SUM-159 (R² = 0.033, F = 1.77, p = 0.149). These findings indicate that treatment-induced karyotypic changes are cell line–specific, warranting further investigation into line-specific responses and the chromosomal drivers of these alterations.
+
+3.  Visualize: PCA and Distance Boxplot
+
+```{r}
+library(ggplot2)
+
+# PCA
+pca_res <- prcomp(karyo_df[, 1:22], scale. = TRUE)
+pca_df <- data.frame(pca_res$x, treatment = karyo_df$treatment)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = treatment)) +
+  geom_point(alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "PCA of Karyotype Profiles")
+
+# Distances to group centroids (for dispersion visualization)
+bd <- betadisper(vegdist(as.matrix(karyo_df[, 1:22])), group = karyo_df$treatment)
+boxplot(bd, main = "Dispersion of Karyotype Profiles by Treatment")
+
+```
+
+4.  Test Line × Treatment Interaction
+
+-   **Reason:** We wanted to know: **Does the effect of treatment vary depending on the cell line?**
+
+```{r}
+# Assuming replicate-level aggregation
+adonis2(dist_flask ~ line * treatment, 
+        data = meta_flask, 
+        permutations = 999, 
+        strata = meta_flask$line)
+
+```
+**Interpretation:** A PERMANOVA model including the interaction between cell line and treatment was conducted to investigate whether treatment effects on karyotype composition differ by cell line. The model explained approximately 79.3% of the variance (R² = 0.793), but the interaction effect was not statistically significant (F = 1.84, p = 0.604). This suggests that, after accounting for baseline differences between cell lines, there is no strong evidence of a treatment × cell line interaction in shaping overall karyotypic profiles at the replicate (flask) level.
+
+
+
+## Summary of my Finding based on your feedbacks and further investigation.
+
+Our analysis explored whether cancer treatments cause statistically significant changes in single-cell karyotype profiles across multiple cell lines. The global PERMANOVA using flask-level centroids did not detect a significant treatment effect across all lines (p = 0.638), and the line × treatment interaction was also not significant (p = 0.604), suggesting no consistent treatment-driven shift in karyotype profiles when accounting for inter-line variability. However, subgroup PERMANOVA within individual cell lines revealed strong and significant treatment effects in HGC-27, MDAMB231, and SNU-668, but not in SUM-159. This pattern indicates that the effect of treatment on karyotype composition is cell line–specific and may be diluted or masked in global models due to high inter-line heterogeneity.
+
+
+```{r}
+library(DiagrammeR)
+
+grViz("
+digraph karyo_analysis_decision {
+  
+  graph [layout = dot, rankdir = TB]
+
+  node [shape = box, style = filled, fillcolor = lightblue, fontname = Helvetica, fontsize = 10]
+
+  # Step nodes
+  A [label = 'START: Karyotype Data (22 chr per cell)\n+ Treatment + Line + Replicate']
+  B [label = 'Initial Data Cleaning & Tidy Format']
+  C [label = 'Exploratory Analysis\n(PCA, Boxplots, Dispersion Test)']
+  D [label = 'Global PERMANOVA\nUsing Centroid of Each Replicate']
+  E [label = 'Is PERMANOVA Significant?\np > 0.05']
+  F1 [label = 'NO\n→ Explore by Cell Line (Subgroup PERMANOVA)']
+  F2 [label = 'YES\n→ Proceed to Post-hoc/Pairwise Comparisons']
+  G [label = 'Subgroup PERMANOVA by Cell Line']
+  H [label = 'Any Significant Treatment Effect within Cell Lines?']
+  I1 [label = 'YES\n→ Treatment Alters Karyotype in Specific Lines']
+  I2 [label = 'NO\n→ Explore Individual Features']
+  J [label = 'Chromosome-Level GLMM (e.g. Chr08 Gain)']
+  K [label = 'Interpret Model Results\nFixed & Random Effects']
+  L [label = 'REPORT:\n• Global R² and p-value\n• Subgroup Insights\n• Chromosome-Level Findings']
+
+  # Edges
+  A -> B -> C -> D -> E
+  E -> F1 [label = 'p > 0.05']
+  E -> F2 [label = 'p < 0.05']
+  F1 -> G -> H
+  H -> I1 [label = 'p < 0.05']
+  H -> I2 [label = 'p > 0.05']
+  I2 -> J -> K
+  I1 -> L
+  K -> L
+  F2 -> L
+}
+")
+
+
+```
+
+
+
+```{r}
+query <- "SELECT id, passaged_from_id1, passage, event, date, media from Passaging WHERE passaged_from_id1 != 'NA'"
+mismatches <- dbGetQuery(db, query)
+
+
+# --- Comparison 1: Passage Mismatch ---
+# Perform a self-join on the 'id' and 'passaged_from_id1' columns to compare passage numbers
+# Here, we are joining the data on the id = passaged_from_id1 to compare passages
+comparisonSeed <- mismatches[mismatches$event=='seeding',] %>%
+  inner_join(mismatches, by = c("passaged_from_id1" = "id"), suffix = c("_new", "_original")) %>%
+  filter(passage_new != passage_original + 1)
+
+# 'comparisonSeed' now contains rows where the passage of the new id is not equal to 
+# the passage of the passaged_from_id1 + 1
+# add harvest comparison where passage_new != passage_original
+comparisonHarvest <- mismatches[mismatches$event=='harvest',] %>%
+  inner_join(mismatches, by = c("passaged_from_id1" = "id"), suffix = c("_new", "_original")) %>%
+  filter(passage_new != passage_original)
+
+# Add a column to label this comparison
+passage_comparison <- bind_rows(comparisonSeed ,comparisonHarvest)
+passage_comparison$comparison_type <- "Passage Mismatch"
+View(comparisonSeed)
+
+# --- Comparison: Name Mismatch Before "_A#" ---
+# Extract the parts of id and passaged_from_id1 before "_A#"
+# Remove hyphens/dashes and compare the extracted parts
+comparisonID <- mismatches %>%
+  mutate(
+    id_clean = gsub("-", "", sub("_A\\d+.*", "", id)),  # Remove hyphens, trim from "_A#" onward
+    passaged_from_id1_clean = gsub("-", "", sub("_A\\d+.*", "", passaged_from_id1))
+  ) %>%
+  filter(id_clean != passaged_from_id1_clean)  # Keep only mismatches
+
+# Add a label column
+comparisonID$comparison_type <- "Name Mismatch"
+
+# View result
+View(comparisonID)
+# Add a column to label this comparison
+comparisonID$comparison_type <- "Name Mismatch"
+
+
+extract_passage_number <- function(x) {
+  # Use regular expression to extract the number following '_A'
+  match <- str_match(x, "_A(\\d+)")
+  
+  # If there is a match, return the number as integer, otherwise return NA
+  if (!is.na(match[2])) {
+    return(as.numeric(match[2]))
+  } else {
+    return(NA)
+  }
+}
+
+# Apply the A# function to both id and passaged_from_id1 columns
+mismatches$passage_num_id <- sapply(mismatches$id, extract_passage_number)
+mismatches$passage_num_from <- sapply(mismatches$passaged_from_id1, extract_passage_number)
+
+# Filter out rows where the passage numbers are equal (i.e., no mismatch)
+harvest_passageID <- mismatches[mismatches$event=='harvest',] %>%
+  filter(!is.na(passage_num_id) & !is.na(passage_num_from) & passage_num_id != passage_num_from)
+seed_passageID <- mismatches[mismatches$event=='seeding',] %>%
+  filter(!is.na(passage_num_id) & !is.na(passage_num_from) & passage_num_id != 1+passage_num_from)
+passageID_comparison <- bind_rows(seed_passageID, harvest_passageID) 
+
+# Add a column to label this comparison
+passageID_comparison$comparison_type <- "Passage ID Mismatch"
+
+
+# --- Comparison 3: Media Mismatch ---
+# Perform self-join to align the media of `id` with `passaged_from_id1`
+media_comparison <- mismatches %>%
+  inner_join(mismatches, by = c("passaged_from_id1" = "id"), suffix = c("_id", "_from")) %>%
+  filter(media_id != media_from)
+
+# Add a column to label this comparison as "Media Mismatch"
+media_comparison$comparison_type <- "Media Mismatch"
+write.csv(comparisonID, "~/Documents/R_codes/name_comparison.csv", row.names = FALSE)
+
+
+# --- Combine Results ---
+# Select only relevant columns for all comparisons
+# passage_comparison <- passage_comparison %>% select(id, passaged_from_id1, passage, comparison_type)
+# comparisonID <- name_comparison %>% select(id, passaged_from_id1, comparison_type)
+# media_comparison <- media_comparison %>% select(id, passaged_from_id1, media, comparison_type)
+
+# Combine all comparisons into one data frame
+combined_comparisons <- bind_rows(passage_comparison, comparisonID, media_comparison, passageID_comparison)
+# Remove duplicate entries based on the "id" column
+combined_comparisons_unique <- combined_comparisons %>%
+  distinct(id, .keep_all = TRUE)
+
+# Write the combined unique results to a CSV file
+write.csv(combined_comparisons_unique, "~/Documents/R_codes/combined_comparisons_unique1.csv", row.names = FALSE)
+
+
+# Filter out rows where the passage numbers are equal (i.e., no mismatch)
+mismatch_final <- mismatches[!is.na(mismatches$passage_num_id) & 
+                               !is.na(mismatches$passage_num_from) & 
+                               mismatches$passage_num_id != mismatches$passage_num_from, ]
+mismatch_final$suggested_corrections <- ""
+# Print the mismatched rows
+View(mismatch_final)
+
+#write.csv(mismatch_harvest, "mismatch_data.csv", row.names = FALSE)
+write.csv(mismatch_final, "~/Documents/R_codes/mismatch_data.csv", row.names = FALSE)
+
+dbDisconnect(db)
+```
+
+
+
+######################## g
+
+
+```{r eval=FALSE, include=FALSE}
+q <- paste0("SELECT * FROM Passaging")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+
+# Joining the passaging data 
+joined_data <- left_join(karyo_df, res_passage, by = "replicate_id")
+
+
+# Creating a new data set for SNU_668
+joined_data %>% 
+  filter(cellLine == "SNU-668" & treatment == "Control") -> SNU_668
+
+round(SNU_668$date[33] %--% SNU_668$date[1]/months(1))
+```
+
+
+
+
+
+
+```{r}
+# Load required libraries
+library(tidyverse)
+
+# Step 1: Prepare baseline (control) reference profile
+# Assuming karyo_df is your real dataset with chromosomes V1 to V22
+# And it contains "treatment" column
+control_profile <- karyo_df %>%
+  filter(line == "SNU-668",treatment == "Control") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+# Step 2: Define simulation function
+simulate_karyotypes <- function(n_cells = 1000, n_chrom = 22, time_steps = 10, p_gain = 0.03, p_loss = 0.03) {
+  karyo_list <- vector("list", n_cells)
+  for (i in 1:n_cells) {
+    # Start with random cancer-like karyotype (non-diploid) between 0–5
+    karyo <- sample(0:5, n_chrom, replace = TRUE)
+    for (t in 1:time_steps) {
+      change <- sample(c(1, -1, 0), n_chrom, replace = TRUE,
+                       prob = c(p_gain, p_loss, 1 - p_gain - p_loss))
+      karyo <- pmax(0, karyo + change)
+    }
+    karyo_list[[i]] <- karyo
+  }
+  sim_mat <- do.call(rbind, karyo_list)
+  colnames(sim_mat) <- paste0("V", 1:n_chrom)
+  return(sim_mat)
+}
+
+# Step 3: Define objective function to minimize
+objective_fn <- function(params) {
+  p_gain <- params[1]
+  p_loss <- params[2]
+  sim <- simulate_karyotypes(p_gain = p_gain, p_loss = p_loss)
+  sim_profile <- colMeans(sim)
+  dist <- sum(abs(sim_profile - control_profile)) # Manhattan distance
+  return(dist)
+}
+
+# Step 4: Optimize
+set.seed(42)
+opt <- optim(par = c(0.03, 0.03), fn = objective_fn, method = "L-BFGS-B",
+             lower = c(0.01, 0.01), upper = c(0.2, 0.2))
+
+opt_params <- opt$par
+cat("Optimal P_gain:", opt_params[1], "\n")
+cat("Optimal P_loss:", opt_params[2], "\n")
+
+# Step 5: Final simulation with optimized params
+optimized_sim <- simulate_karyotypes(n_cells = 1000,
+                                     p_gain = opt_params[1],
+                                     p_loss = opt_params[2])
+
+# Step 6: Show simulated result
+sim_df <- as.data.frame(optimized_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+# Show first few rows
+head(sim_df)
+
+```
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(pheatmap)
+library(dplyr)
+library(tidyr)
+library(scales)
+```
+
+## Theoretical Framework
+
+In this study, we aim to model **karyotype evolution in cancer cells (SNU-668 cell line)** under untreated (control) conditions over a time span of four months. The motivation stems from distinguishing **stochastic drift** from **directed karyotypic evolution** by quantifying changes in chromosomal copy number across time.
+
+### Baseline and Target Definitions
+- **Baseline**: The replicate `SNU-668_C_A4_seed`, representing the early control state (Month 0).
+- **Target**: The replicate `SNU-668_C_A24_seed`, representing the evolved control karyotype after 4 months (Month 4).
+
+We simulate chromosomal copy number evolution over multiple time steps to match the late control profile. The simulation framework is built on a **discrete-time Markov chain model**, assuming each chromosome in each cell can independently:
+
+- Gain a copy (→ +1) with probability \( p_\text{gain} \)
+- Lose a copy (→ −1) with probability \( p_\text{loss} \)
+- Remain unchanged with probability \( 1 - p_\text{gain} - p_\text{loss} \)
+
+Copy numbers are initialized based on the actual observed `SNU-668_C_A4_seed` data. Over a range of simulation steps, we generate predicted karyotype profiles and compute distances to the `SNU-668_C_A24_seed` profile. The **optimal number of time steps** is chosen as the one that minimizes this distance.
+
+### Objective
+To identify the number of time steps (or simulation length) that best mimics the empirical karyotype drift between early and late control replicates.
+
+---
+
+## Load Input Reference (Early and Late Control)
+```{r load-control-karyo}
+# Mock-up: Replace this with actual data
+# karyo_df should be a data frame with columns V1:V22, treatment, line, replicate_id
+
+# Filter for SNU-668 control replicates
+karyo_control <- karyo_df %>% filter(line == "SNU-668", treatment == "Control")
+early_control <- karyo_control %>% filter(replicate_id == "SNU-668_C_A4_seed")
+late_control <- karyo_control %>% filter(replicate_id == "SNU-668_C_A24_seed")
+
+# Aggregate mean chromosome values per replicate
+early_avg <- early_control %>% select(starts_with("V")) %>% summarise_all(mean)
+late_avg  <- late_control %>% select(starts_with("V")) %>% summarise_all(mean)
+```
+
+## Define Stochastic Simulation Function
+```{r simulation-function}
+simulate_karyotype <- function(initial_vec, n_cells = 1000, steps = 1, p_gain = 0.03, p_loss = 0.03) {
+  n_chrom <- length(initial_vec)
+  results <- matrix(rep(initial_vec, each = n_cells), nrow = n_cells)
+  for (t in 1:steps) {
+    delta <- replicate(n_chrom, sample(c(1, -1, 0), n_cells, replace = TRUE, prob = c(p_gain, p_loss, 1 - p_gain - p_loss)))
+    results <- pmax(0, results + delta)
+  }
+  colnames(results) <- names(initial_vec)
+  as.data.frame(results)
+}
+```
+
+## Run Simulations Over Time Steps
+```{r run-simulations}
+time_steps <- 1:30
+
+# Store distances at each time point
+distance_profile <- data.frame(time = time_steps, distance = NA)
+
+for (t in time_steps) {
+  sim <- simulate_karyotype(as.numeric(early_avg), steps = t)
+  sim_avg <- colMeans(sim)
+  dist <- sum(abs(sim_avg - as.numeric(late_avg)))
+  distance_profile$distance[t] <- dist
+}
+
+# Plot optimization
+ggplot(distance_profile, aes(x = time, y = distance)) +
+  geom_line(size = 1.2) +
+  geom_point() +
+  labs(title = "Optimization: Simulated vs Observed Late Control",
+       x = "Simulation Time Steps",
+       y = "Manhattan Distance to Late Control") +
+  theme_minimal()
+```
+
+## Visualize Final Simulation
+```{r final-simulation-heatmap}
+# Simulate for optimal step
+best_time <- distance_profile$time[which.min(distance_profile$distance)]
+sim_final <- simulate_karyotype(as.numeric(early_avg), steps = best_time)
+
+# Heatmap (random subset of cells)
+heat_mat <- as.matrix(sim_final[1:50,])
+pheatmap(heat_mat, cluster_rows = TRUE, cluster_cols = TRUE,
+         main = paste("Simulated Karyotype (Control - Time Step", best_time, ")"),
+         show_rownames = FALSE)
+
+```
+
+
+
+
+
+
+## Theoretical Framework
+
+We model the chromosomal evolution of cancer cells using a **discrete-time stochastic process**, specifically a **Markov chain** where each chromosome in a given cell may independently:
+
+- Gain a copy (+1),
+- Lose a copy (−1), or
+- Remain unchanged (0)
+
+at each time step.
+
+Let:
+- $C_{i,t}$ be the copy number of chromosome $i$ at time $t$,
+- $P_g$ be the probability of gaining a chromosome,
+- $P_l$ be the probability of losing a chromosome.
+
+### Transition Rule
+$$
+C_{i,t+1} = \begin{cases}
+  C_{i,t} + 1 & \text{with probability } P_g \\
+  C_{i,t} - 1 & \text{with probability } P_l, \text{ if } C_{i,t} > 0 \\
+  C_{i,t}     & \text{with probability } 1 - P_g - P_l
+\end{cases}
+$$
+
+We define the initial state $C_{i,0}$ using the early control replicate (`SNU-668_C_A4_seed`) and optimize $P_g$ and $P_l$ such that the simulated average profile after 4 months best approximates the late control replicate (`SNU-668_C_A24_seed`).
+
+## Load and Prepare Data
+```{r}
+# Assume karyo_df is already loaded and contains columns V1 to V22, treatment, replicate_id
+baseline <- karyo_df %>%
+  filter(line == "SNU-668", replicate_id == "SNU-668_C_A4_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean)) %>%
+  unlist()
+
+late_control <- karyo_df %>%
+  filter(line == "SNU-668", replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean)) %>%
+  unlist()
+```
+
+## Simulation Function
+```{r}
+simulate_karyotypes <- function(init_profile, n_cells = 1000, time_steps = 10, p_gain = 0.03, p_loss = 0.03) {
+  n_chrom <- length(init_profile)
+  sim_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- round(init_profile)  # Start with early control
+    for (t in 1:time_steps) {
+      change <- sample(c(+1, -1, 0), size = n_chrom, replace = TRUE,
+                       prob = c(p_gain, p_loss, 1 - p_gain - p_loss))
+      karyo <- pmax(0, karyo + change)
+    }
+    sim_list[[i]] <- karyo
+  }
+  do.call(rbind, sim_list)
+}
+```
+
+## Objective Function (Distance to Late Control)
+```{r}
+objective_fn <- function(params) {
+  p_gain <- params[1]
+  p_loss <- params[2]
+  sim <- simulate_karyotypes(init_profile = baseline, p_gain = p_gain, p_loss = p_loss)
+  sim_profile <- colMeans(sim)
+  dist <- sum(abs(sim_profile - late_control)) # Manhattan distance
+  return(dist)
+}
+```
+
+## Optimization
+```{r}
+set.seed(42)
+opt <- optim(par = c(0.03, 0.03), fn = objective_fn, method = "L-BFGS-B",
+             lower = c(0.01, 0.01), upper = c(0.2, 0.2))
+opt_params <- opt$par
+cat("Optimal P_gain:", opt_params[1], "\n")
+cat("Optimal P_loss:", opt_params[2], "\n")
+```
+
+## Final Simulation
+```{r}
+final_sim <- simulate_karyotypes(init_profile = baseline,
+                                 p_gain = opt_params[1],
+                                 p_loss = opt_params[2])
+```
+
+## Heatmap Visualization
+```{r}
+heat_mat <- final_sim %>%
+  as.data.frame() %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))
+
+pheatmap(heat_mat[1:50, ],
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         main = "Simulated Chromosome Profiles (First 50 Cells)",
+         show_rownames = FALSE)
+```
+
+## Distance Between Simulation and Late Control
+```{r}
+final_profile <- colMeans(final_sim)
+distance_to_late <- sum(abs(final_profile - late_control))
+cat("Final Manhattan distance to late control:", distance_to_late)
+```
+
+
+
+
+### gggg
+
+```{r}
+library(tidyverse)
+
+# Step 1: Extract early and late control cell-level karyotypes
+early_control_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_control_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+# Step 2: Define simulation function (randomly sample start profiles from early pool)
+simulate_karyotypes <- function(start_pool, p_gain, p_loss, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+    for (t in 1:time_steps) {
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE,
+                       prob = c(p_gain, p_loss, 1 - p_gain - p_loss))
+      karyo <- pmax(0, karyo + change)
+    }
+    karyo_list[[i]] <- karyo
+  }
+  do.call(rbind, karyo_list)
+}
+
+# Step 3: Define parameter grid (grid search)
+p_gain_seq <- seq(0.01, 0.2, by = 0.01)
+p_loss_seq <- seq(0.01, 0.2, by = 0.01)
+param_grid <- expand.grid(p_gain = p_gain_seq, p_loss = p_loss_seq)
+
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+results <- param_grid %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_control_mat,
+        p_gain = p_gain,
+        p_loss = p_loss,
+        n_cells = 1000,
+        time_steps = 10  # Simulating over 4 months
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_control_profile))  # Manhattan distance
+    }
+  )
+
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+print(best_params)
+
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_control_mat,
+  p_gain = best_params$p_gain,
+  p_loss = best_params$p_loss,
+  n_cells = 1000,
+  time_steps = 10
+)
+
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Control - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r}
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))
+
+pheatmap(heat_mat[1:50, ],
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         main = "Simulated Chromosome Profiles (First 50 Cells)",
+         show_rownames = FALSE)
+```
+

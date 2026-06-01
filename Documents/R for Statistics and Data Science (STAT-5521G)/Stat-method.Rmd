@@ -1,0 +1,77 @@
+---
+title: "Homework 3"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin = 0.75in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading of **Health** data
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+options(scipen = 999)
+statme <- read_table("statme.txt")
+
+# Ensure X is properly defined (5 columns of statme)
+#Manipulating the data set to create a constant variable for column fill #with 1, then combaining it with other X variable to get X variable
+X<- statme %>% 
+  mutate(constant = rep(1, 53)) %>% 
+  select(6,2:5) %>% 
+  as.matrix()
+
+# Ensure Y is properly defined (first 4 columns of statme)
+Y <- as.matrix(statme[, 1])  
+
+```
+
+1. \[X'X =\]
+
+```{r}
+# Compute X'X
+XtX <- t(X) %*% X
+
+# Print the result
+print(XtX)
+```
+
+2. \[(X'X)^{-1} =\]
+
+```{r}
+XtX_inv <- solve(XtX)
+print(XtX_inv)
+```
+
+3. \[X'Y =\]
+
+```{r}
+XtY <- t(X) %*% Y
+print(XtY)
+```
+
+4. \[b = (X'X)^{-1} X'Y\]
+
+```{r}
+b <- XtX_inv %*% XtY
+colnames(b) <- c("Estimates")
+rownames(b) <- c("Intercept", "Doctor Availability", "Hospital Availability", "Income", "Population Density")
+
+print(b)  # Regression coefficients
+
+```
+
+5. Linear regression model:
+
+$$
+\text{death rate} = \beta_0 + \beta_1 \text{doctor availability} + \beta_2 \text{hospital availability} + \beta_3 \text{income} + \beta_4 \text{population density}
+$$
+
+
+$$
+\text{death rate} = `r b[1]` + `r b[2]` (\text{doctor availability}) + `r b[3]` (\text{hospital availability}) `r b[4]` (\text{income}) `r b[5]` (\text{population density})
+$$

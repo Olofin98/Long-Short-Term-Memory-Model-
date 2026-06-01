@@ -1,0 +1,373 @@
+---
+title: "Decoding ML"
+author: "Olofin Daniel"
+date: "2025-07-24"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Liberies
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyverse)
+library(stringr)
+library(naniar)
+library(gridExtra)
+library(grid)
+library(mice)
+library(dlookr)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+data <- read.csv("projectdata.csv")
+names(data)
+# Select the relevant columns
+selected_data <- data[, c("Mutation.Count", 
+                          "Somatic.Status", 
+                          "Gene.Panel", 
+                          "Fraction.Genome.Altered", 
+                          "MSI.Type", 
+                          "Sex", 
+                          "Race", 
+                          "Ethnicity", 
+                          "Sample.Type", 
+                          "Overall.Survival.Status",
+                          "Overall.Survival..Months.")]
+```
+ **I read the original dataset and create a new data set with only needed variables before cleaned the data!**
+
+## Checking data structure
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+str(selected_data)
+```
+
+## Checking unique objject in each variable
+
+```{r message=FALSE, warning=FALSE}
+# Function to show unique values for character columns
+show_unique_characters <- function(data) {
+  # Loop through each column in the dataset
+  for (col_name in colnames(data)) {
+    # Check if the column is of type character or factor
+    if (is.character(data[[col_name]]) | is.factor(data[[col_name]])) {
+      cat("\nUnique values in column:", col_name, "\n")
+      print(unique(data[[col_name]]))  # Show unique values
+    }
+  }
+}
+
+# Call the function with your dataset
+show_unique_characters(selected_data)
+
+```
+
+## Dealing with ""
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Function to replace empty strings with NA
+replace_empty_with_na <- function(data) {
+  # Loop through each column in the dataset
+  data[] <- lapply(data, function(x) {
+    # Replace empty strings with NA
+    if (is.character(x) | is.factor(x)) {
+      x[x == ""] <- NA
+    }
+    return(x)
+  })
+  return(data)
+}
+
+# Call the function with your dataset
+selected_data <- replace_empty_with_na(selected_data)
+
+```
+
+
+## Correcting the unique object 
+```{r message=FALSE, warning=FALSE}
+selected_data<-selected_data %>% 
+  mutate(Sex = str_to_sentence(Sex),
+         Race = str_to_sentence(Race))
+
+selected_data %>% 
+  separate(Overall.Survival.Status, into = c("Overall.Survival.Status_num","Overall.Survival.Status")) %>% 
+  mutate(Overall.Survival.Status = str_to_sentence(Overall.Survival.Status),
+         Gene.Panel = str_to_sentence(Gene.Panel)) -> selected_data
+```
+
+
+## Checking the Missing variables
+
+```{r message=FALSE, warning=FALSE}
+gg_miss_var(selected_data)
+
+```
+
+## Distribution of Continous variables
+### Histograms or Density Plots for Continuous Variables (e.g., Mutation Count, Fraction Genome Altered)
+
+
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+
+# Mutation Count
+p1<-ggplot(selected_data, aes(x = Mutation.Count)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Mutation Count", x = "Mutation Count", y = "Frequency")+
+  theme_minimal()
+
+# Fraction Genome Altered
+p2<-ggplot(selected_data, aes(x = Fraction.Genome.Altered)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
+  labs(title = "Distribution of Fraction Genome Altered", x = "Fraction Genome Altered", y = "Frequency")+
+  theme_minimal()
+
+# Fraction Genome Altered
+p3<-ggplot(selected_data, aes(x = Overall.Survival..Months.)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
+  labs(title = "Distribution of Fraction Genome Altered", x = "Fraction Genome Altered", y = "Frequency")+
+  theme_minimal()
+# Combine the two heatmaps
+grid.arrange(p1, p2, p3, ncol = 2)
+
+```
+
+## Boxplots for Genetic and Demographic Factors
+### Boxplot of Mutation Count by Sample Type or Sex
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p3<-ggplot(selected_data, aes(x = Sample.Type, y = Mutation.Count, fill = Sample.Type)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Mutation Count by Sample Type", x = "Sample Type", y = "Mutation Count")
+
+p4<-ggplot(selected_data, aes(x = Sex, y = Mutation.Count, fill = Sex)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Mutation Count by Sex", x = "Sex", y = "Mutation Count")
+
+# Combine the two heatmaps
+grid.arrange(p3, p4, ncol = 2)
+
+```
+
+### Boxplot of Fraction Genome Altered by Race or Ethnicity
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p5<-ggplot(selected_data, aes(x = Race, y = Fraction.Genome.Altered, fill = Race)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Fraction Genome Altered by Race", x = "Race", y = "Fraction Genome Altered")
+
+p6<-ggplot(selected_data, aes(x = Ethnicity, y = Fraction.Genome.Altered, fill = Ethnicity)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Fraction Genome Altered by Ethnicity", x = "Ethnicity", y = "Fraction Genome Altered")
+
+# Combine the two heatmaps
+grid.arrange(p5, p6, ncol = 2)
+```
+
+### Bar Plot for Sex, Race, and Ethnicity
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p7<-ggplot(selected_data, aes(x = Sex, fill = Sex)) +
+  geom_bar(show.legend = F) +
+  labs(title = "Distribution of Sex", x = "Sex", y = "Count")
+
+p8<- ggplot(selected_data, aes(x = Race, fill = Race)) +
+  geom_bar(show.legend = F) +
+  labs(title = "Distribution of Race", x = "Race", y = "Count")
+
+p9<-ggplot(selected_data, aes(x = Ethnicity, fill = Ethnicity)) +
+  geom_bar(show.legend = F) +
+  labs(title = "Distribution of Ethnicity", x = "Ethnicity", y = "Count")
+
+# Combine the two heatmaps
+grid.arrange(p7, p8, p9, ncol = 2)
+```
+
+## Handling Missing and Unknown
+
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p1<- dlookr::imputate_na(selected_data,Fraction.Genome.Altered, method = "mean") %>% plot()
+p2<-dlookr::imputate_na(selected_data,Fraction.Genome.Altered, method = "median") %>% plot()
+p3<-dlookr::imputate_na(selected_data,Fraction.Genome.Altered, method = "mode") %>% plot()
+p4<-dlookr::imputate_na(selected_data,Fraction.Genome.Altered, method = "mice") %>% plot()
+
+
+# Combine the two heatmaps
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+**Look at the graph above it shows that mice imputation matches well than another methods**
+
+
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p1<- dlookr::imputate_na(selected_data,Mutation.Count, method = "mean") %>% plot()
+p2<-dlookr::imputate_na(selected_data,Mutation.Count, method = "median") %>% plot()
+p3<-dlookr::imputate_na(selected_data,Mutation.Count, method = "mode") %>% plot()
+p4<-dlookr::imputate_na(selected_data,Mutation.Count, method = "mice") %>% plot()
+
+
+# Combine the two heatmaps
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p1<- dlookr::imputate_na(selected_data,Overall.Survival..Months., method = "mean") %>% plot()
+p2<-dlookr::imputate_na(selected_data,Overall.Survival..Months., method = "median") %>% plot()
+p3<-dlookr::imputate_na(selected_data,Overall.Survival..Months., method = "mode") %>% plot()
+p4<-dlookr::imputate_na(selected_data,Overall.Survival..Months., method = "mice") %>% plot()
+
+
+# Combine the two heatmaps
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+selected_data<-selected_data %>% 
+  mutate(Fraction.Genome.Altered = imputate_na(selected_data,Fraction.Genome.Altered, method = "mice"),
+        Mutation.Count = imputate_na(selected_data,Mutation.Count, method = "mice"),
+        Overall.Survival..Months. =imputate_na(selected_data,Overall.Survival..Months., method = "mice"))
+```
+
+### Function for imputing na for character type
+
+```{r message=FALSE, warning=FALSE}
+# Function to impute missing values with the mode for character columns
+impute_na_with_mode <- function(data) {
+  # Loop through each column in the dataset
+  data[] <- lapply(data, function(x) {
+    # Only apply to character or factor columns
+    if (is.character(x) | is.factor(x)) {
+      # Calculate the mode (most frequent value)
+      mode_value <- names(sort(table(x), decreasing = TRUE))[1]
+      # Replace NAs with the mode value
+      x[is.na(x)] <- mode_value
+    }
+    return(x)
+  })
+  return(data)
+}
+
+# Call the function with your dataset
+selected_data <- impute_na_with_mode(selected_data)
+```
+**I wrote a function that impute all missing values in character type data with mode**
+
+
+### Confirmation Missing variables
+
+```{r message=FALSE, warning=FALSE}
+gg_miss_var(selected_data)
+
+```
+
+
+
+### Droping all values with unknow
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+selected_data %>% 
+  group_by(Sex) %>% 
+  summarise(n = n())
+
+selected_data %>% 
+  group_by(Race) %>% 
+  summarise(n = n())
+
+selected_data %>% 
+  group_by(Ethnicity) %>% 
+  summarise(n = n())
+
+selected_data %>% 
+  group_by(Sample.Type) %>% 
+  summarise(n = n())
+
+```
+
+```{r}
+selected_data %>% 
+  filter(Sex == "Unknown" | Race == "Unknown" | Ethnicity %in% c("Unknown whether Spanish or not","Unknown") | Sample.Type == "Unknown") %>% dim()
+
+selected_data %>% 
+  filter(Sex != "Unknown" & Race != "Unknown" & 
+         !Ethnicity %in% c("Unknown whether Spanish or not", "Unknown") & 
+         Sample.Type != "Unknown") ->selected_data
+
+```
+**188 observation was drop because they have unkown**
+
+
+# New Analysis After Data cleaning...
+
+## Distribution of Continous variables
+### Histograms or Density Plots for Continuous Variables (e.g., Mutation Count, Fraction Genome Altered)
+
+
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+
+# Mutation Count
+p1<-ggplot(selected_data, aes(x = Mutation.Count)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Mutation Count", x = "Mutation Count", y = "Frequency")+
+  theme_minimal()
+
+# Fraction Genome Altered
+p2<-ggplot(selected_data, aes(x = Fraction.Genome.Altered)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
+  labs(title = "Distribution of Fraction Genome Altered", x = "Fraction Genome Altered", y = "Frequency")+
+  theme_minimal()
+
+# Fraction Genome Altered
+p3<-ggplot(selected_data, aes(x = Overall.Survival..Months.)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
+  labs(title = "Distribution of Fraction Genome Altered", x = "Fraction Genome Altered", y = "Frequency")+
+  theme_minimal()
+# Combine the two heatmaps
+grid.arrange(p1, p2, p3, ncol = 2)
+
+```
+
+## Boxplots for Genetic and Demographic Factors
+### Boxplot of Mutation Count by Sample Type or Sex
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p3<-ggplot(selected_data, aes(x = Sample.Type, y = Mutation.Count, fill = Sample.Type)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Mutation Count by Sample Type", x = "Sample Type", y = "Mutation Count")
+
+p4<-ggplot(selected_data, aes(x = Sex, y = Mutation.Count, fill = Sex)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Mutation Count by Sex", x = "Sex", y = "Mutation Count")
+
+# Combine the two heatmaps
+grid.arrange(p3, p4, ncol = 2)
+
+```
+
+### Boxplot of Fraction Genome Altered by Race or Ethnicity
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p5<-ggplot(selected_data, aes(x = Race, y = Fraction.Genome.Altered, fill = Race)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Fraction Genome Altered by Race", x = "Race", y = "Fraction Genome Altered")
+
+p6<-ggplot(selected_data, aes(x = Ethnicity, y = Fraction.Genome.Altered, fill = Ethnicity)) +
+  geom_boxplot(show.legend = F) +
+  labs(title = "Fraction Genome Altered by Ethnicity", x = "Ethnicity", y = "Fraction Genome Altered")
+
+# Combine the two heatmaps
+grid.arrange(p5, p6, ncol = 2)
+```
+
+### Bar Plot for Sex, Race, and Ethnicity
+```{r echo=FALSE, fig.height=8, fig.width=16, message=FALSE, warning=FALSE, out.width="100%"}
+p7<-ggplot(selected_data, aes(x = Sex, fill = Sex)) +
+  geom_bar(show.legend = F) +
+  labs(title = "Distribution of Sex", x = "Sex", y = "Count")
+
+p8<- ggplot(selected_data, aes(x = Race, fill = Race)) +
+  geom_bar(show.legend = F) +
+  labs(title = "Distribution of Race", x = "Race", y = "Count")
+
+p9<-ggplot(selected_data, aes(x = Ethnicity, fill = Ethnicity)) +
+  geom_bar(show.legend = F) +
+  labs(title = "Distribution of Ethnicity", x = "Ethnicity", y = "Count")
+
+# Combine the two heatmaps
+grid.arrange(p7, p8, p9, ncol = 2)
+```
+

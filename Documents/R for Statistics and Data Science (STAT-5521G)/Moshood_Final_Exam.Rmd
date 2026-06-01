@@ -1,0 +1,536 @@
+---
+title: "Statistical Method Final Exam"
+author: "Moshood A. Garuba"
+date: "2025-05-08"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Problem 1
+Cholesterol is a type of lipid, a fat-like substance that's essential for many bodily functions. The Blood fat measure can serve as a good estimate for the cholesterol. The “BF” dataset provides the observations of 25 adults. With this dataset, a predictive model can be performed to estimate the Blood Fat Y
+
+$$
+\hat{Y} = \beta_0 + \beta_1 X_i1 + \beta_2 X_i2 + \epsilon
+$$
+```{r message=FALSE, warning=FALSE}
+Weight <- read.csv("~/R for Statistics and Data Science (STAT-5521G)/Weight.txt", sep="")
+```
+
+
+## Construct the linear regression model and report the R output of the summary.
+
+```{r message=FALSE, warning=FALSE}
+mlr <- lm(Blood_Fat ~ ., data = Weight)
+
+summary(mlr)
+
+```
+
+
+## 1.2. Report on the fitted linear regression model.
+
+$$
+\hat{Blood Fat} = \beta_0 + \beta_1 Weight + \beta_2 Age
+$$
+$$
+\hat{Blood Fat} = 77.9825 + 0.4174 (Weight) + 5.2166 (Age)
+$$
+
+## 1.3. Report the R ANOVA table of the model (the output of the ANOVA in R).
+
+```{r message=FALSE, warning=FALSE}
+anova(mlr)
+```
+
+- **Main Effect of Weight**:  
+  There is a **statistically significant** and **large** effect of **Weight** on blood fat levels, \( F(1, 22) = 5.26 \), \( p = 0.032 \).  
+  The **partial Eta-squared** (\( \eta^2_p \)) is **0.19** (95% CI: [0.01, 1.00]), indicating that approximately 19% of the variance in blood fat levels is explained uniquely by Weight.
+
+- **Main Effect of Age**:  
+  There is a **highly significant** and **large** effect of **Age**, \( F(1, 22) = 47.46 \), \( p < 0.001 \). The **partial Eta-squared** (\( \eta^2_p \)) is **0.68** (95% CI: [0.48, 1.00]), suggesting that Age uniquely explains about 68% of the variance in blood fat levels.
+
+Overall, Both **Weight** and **Age** have statistically significant and practically meaningful effects on blood fat levels, with Age contributing a substantially larger portion of the explained variance.
+
+
+## 1.4. Check whether the assumptions for the linear regression model are satisfied.
+
+```{r message=FALSE, warning=FALSE}
+# Change the panel layout to 2 x 2 (to look at all 4 plots at once)
+par(mfrow = c(2, 2))
+plot(mlr)
+
+shapiro.test(residuals(mlr))
+```
+
+## 1.5 Interpret what the value of \( \beta_1 \) means
+
+In this regression model, \( \beta_1 \) quantifies the estimated effect of **Weight** on **Blood Fat**, controlling for **Age**. The estimate \( \beta_1 = 0.42 \) indicates that for each 1-unit increase in weight, blood fat levels are expected to increase by **0.42 units**, assuming age remains constant.  However, this effect is **not statistically significant** (*p* = 0.573), and the 95% confidence interval \( [-1.09,\ 1.93] \) contains zero. This implies that the association between weight and blood fat may be due to random variation, and there is **insufficient evidence** to conclude that weight is a significant predictor in this model.
+
+
+## 1.6. According to the output, is there a significant linear relationship between the blood fat and the two independent variables? Provide a summary of the hypothesis test that was performed using the F-test statistics, clearly state the Hypothesis, the test statistics, the p-value, the decision rule and the conclusion.
+
+## 1.6 Test for Overall Significance using the F-Test
+
+We conducted an F-test to determine whether there is a statistically significant linear relationship between **Blood Fat** (dependent variable) and the two independent variables (**Weight** and **Age**).
+
+### Hypotheses
+
+- **Null Hypothesis \( (H_0) \)**: \( \beta_1 = \beta_2 = 0 \)  
+  (i.e., neither Weight nor Age has a linear effect on Blood Fat)
+
+- **Alternative Hypothesis \( (H_1) \)**: At least one \( \beta \neq 0 \)  
+  (i.e., at least one predictor has a significant linear relationship with Blood Fat)
+
+### Test Statistic
+
+- **F(2, 22) = 26.36**
+
+### P-value
+
+- **p < .001**
+
+### Decision Rule
+
+- If *p-value* < 0.05, reject the null hypothesis \( H_0 \)
+
+### Conclusion
+
+Since the *p*-value is less than 0.001, which is well below the 0.05 threshold, we **reject the null hypothesis**. This indicates that there is a **statistically significant linear relationship** between **Blood Fat** and the set of predictors (**Weight** and **Age**) as a whole.
+
+However, while the overall model is significant, the **individual effect of Weight was not statistically significant**, whereas **Age was a strong and significant predictor**.
+
+
+## 1.7 According to the output perform the individual t-tests for significance of each independent variable.
+
+
+### 1. Weight
+
+- **Null Hypothesis \( H_0: \beta_1 = 0 \)**  
+- **Alternative Hypothesis \( H_1: \beta_1 \neq 0 \)**  
+- Estimated Coefficient: **0.42**  
+- 95% CI: **[-1.09, 1.93]**  
+- **t(22) = 0.57**, **p = 0.573**
+
+Since the p-value (0.573) is **greater than 0.05**, we **fail to reject the null hypothesis**.  There is **no statistically significant evidence** that **Weight** is associated with Blood Fat in this model.
+
+
+### 2. Age
+
+- **Null Hypothesis \( H_0: \beta_2 = 0 \)**  
+- **Alternative Hypothesis \( H_1: \beta_2 \neq 0 \)**  
+- Estimated Coefficient: **5.22**  
+- 95% CI: **[3.65, 6.79]**  
+- **t(22) = 6.89**, **p < 0.001**
+
+Since the p-value is **less than 0.001**, we **reject the null hypothesis**.  There is **strong statistically significant evidence** that **Age** is positively associated with Blood Fat.
+
+
+## 1.8 1.8.	Find an estimate for the expected blood fat level if the weight of the person is 88 kg and the age of the same person is  is 58 years.
+
+We use the fitted regression model to estimate the expected blood fat level:
+
+\[
+\hat{Y} = 77.98 + 0.42 \times 88 + 5.22 \times 58
+\]
+
+\[
+\hat{Y} = 77.98 + 36.96 + 302.76 = 417.70
+\]
+
+**Estimated Blood Fat = 417.70 units**
+
+
+## 1.9.	The following model was fit:
+
+$$
+\hat{Y} = \beta_0 + \beta_1 X_i1 + \beta_2 X_i2 + \beta_3 X_i1X_i2  + \epsilon
+$$
+Provide the R summary of the full regression model
+
+```{r message=FALSE, warning=FALSE}
+full_mlr <- lm(Blood_Fat ~ Weight*Age, data = Weight)
+
+summary(full_mlr)
+```
+
+## 1.10.	Provide the output of the ANOVA table in R for the full model
+```{r}
+anova(full_mlr)
+```
+## 1.11.	Report the ANOVA output in R for the full vs. reduced model.
+
+```{r message=FALSE, warning=FALSE}
+anova(mlr,full_mlr)
+```
+
+## 1.12 In testing whether \(\beta_3\) can be dropped from the model, state the null and alternative hypotheses.
+
+**Null Hypothesis (\( H_0 \)):** \( \beta_3 = 0 \) 
+
+**Alternative Hypothesis (\( H_a \)):** \( \beta_3 \neq 0 \) 
+
+
+## 1.13.	Calculate the test statistic to be used to test the hypotheses in 1.11 What degrees of freedom are used for this test?
+
+$$
+F = \frac{SS_{ER} - SS_{F}}{df_{R} - df_{F}} \bigg/ \frac{SS_{F}}{df_{F}}
+$$
+
+
+
+$$
+F = \frac{42806 - 42453}{22 - 21} \Bigg/ \frac{42453}{21}
+$$
+
+
+$$
+F = \frac{352.88}{1} \Bigg/ 2021.57 \approx 0.1746
+$$
+
+- Numerator degrees of freedom: **q = 1**
+- Denominator degrees of freedom: **dfres = 21**
+
+## 1.14.	How will you interpret the output in 1.10? State your conclusion
+
+Since the **P-value (0.6803)** > 0.05 level of significance, we fail to reject the **Null hypothesis** and conclude that \( \beta_3 = 0 \) and it needed to be dropped in the model.
+
+
+## 1.15.	Fit a first-order regression model to the data for the two predictor variables. Obtain the externally studentized residuals and identify any outlying cases. State your conclusion
+
+```{r message=FALSE, warning=FALSE}
+mlr <- lm(Blood_Fat ~ ., data = Weight)
+
+# Obtain externally studentized residuals
+ext_resid <- rstudent(mlr)
+# View residuals with original data
+Weight$Externally_Studentized_Residuals <- ext_resid
+# Identify outliers (typically abs(residual) > 2)
+Weight$Outlier <- abs(ext_resid) > 2
+# Print results
+print(Weight)
+```
+An observation is typically considered an outlier if its studentized residual exceeds ±2. Only one observation was identified as an outlier. This observation may disproportionately affect model estimates.
+
+## Obtain the diagonal element of the hat matrix (the leverage). Identify any outlying X observations using the cutoff value at 2p/n 
+
+```{r message=FALSE, warning=FALSE}
+# Compute leverage values (diagonal of the hat matrix)
+leverage <- hatvalues(mlr)
+# Determine p (number of parameters including intercept) and n (sample size)
+p <- length(coef(mlr)) # includes intercept
+n <- nrow(Weight)
+# Calculate cutoff value for high leverage
+cutoff <- 2 * p / n
+# Identify high leverage observations
+Weight$Leverage <- leverage
+Weight$High_Leverage <- leverage > cutoff
+# View results
+print(paste("Leverage cutoff is:", round(cutoff, 4)))
+
+subset(Weight, High_Leverage == TRUE)
+```
+Points with leverage > 2p/n are considered high leverage. Observations 11 was identified as high leverage points based on the hat matrix diagonals. This is the data point with unusually extreme predictor value compared to the rest of the dataset. High leverage points have the potential to
+strongly influence the regression model, especially the fitted values.
+
+## 1.17.	Obtain the DFFITS, DFBETAS, and Cook’s Distance values for assessing influential observations. Discuss your findings.
+
+```{r message=FALSE, warning=FALSE}
+# DFFITS
+dffits_vals <- dffits(mlr)
+# DFBETAS
+dfbetas_vals <- dfbetas(mlr)
+# Cook’s Distance
+cooks <- cooks.distance(mlr)
+# Thresholds:
+dffits_cutoff <- 2 * sqrt(p / n)
+dfbetas_cutoff <- 2 / sqrt(n)
+influential_points <- which(abs(dffits_vals) > dffits_cutoff |
+apply(abs(dfbetas_vals) > dfbetas_cutoff, 1, any) |
+cooks > 1)
+influential_points
+
+```
+Observations 6 and 20 appear consistently across multiple influence diagnostics (DFFITS,DFBETAS, and Cook’s Distance). This consistency suggests that these points may have a disproportionate impact on your regression model’s estimates, including coefficients and predictions.
+
+
+## 1.18.	Obtain the analysis of variance table that decomposes the regression sum of squares into extra sums of squares associated with \( X_2 \) with given \( X_1 \) 
+
+
+```{r message=FALSE, warning=FALSE}
+# Fit the reduced model with only X1 (Weight)
+model_reduced <- lm(Blood_Fat ~ Weight, data = Weight)
+
+# Fit the full model with both X1 and X2 (Weight + Age)
+model_full <- lm(Blood_Fat ~ Weight + Age, data = Weight)
+
+# Compare the two models using ANOVA
+anova(model_reduced, model_full)
+```
+The extra sum of squares associated with Age given Weight is 92339. The test statistic is highly significant (F = 47.457, p < 0.001), indicating that Age provides a significant improvement to the model after accounting for Weight.
+
+
+## 1.19.	Provide R output for Multicollinearity test.
+
+```{r message=FALSE, warning=FALSE}
+library(car)
+vif(model_full)
+```
+Both Weight and Age have VIF values close to 1, which indicates no multicollinearity.
+
+## 1.20.	Provide interpretation for the R-squared and and what does it represents?
+
+The formula for the coefficient of determination \( R^2 \) is:
+
+\[
+R^2 = 1 - \frac{\text{SS}_{\text{res}}}{\text{SS}_{\text{tot}}}
+\]
+
+```{r message=FALSE, warning=FALSE}
+summary(model_full)$r.squared
+```
+
+R-squared: 0.7056
+
+This means that approximately 70.56% of the variation in Blood_Fat can be explained by the predictors Weight and Age in the model. The remaining 29.44% of the variation is due to other factors not included in the model or random variation.
+
+
+## 1.21.	What is you conclusion about the current model
+
+The current multiple linear regression model, which includes Weight and Age as predictors of Blood Fat, explains approximately **70.56%** of the variability in the response variable. The model shows a statistically significant improvement when Age is added **(F = 47.457, p < 0.001)**, indicating that both predictors contribute meaningfully to the explanation of Blood_Fat levels. There is no strong evidence of multicollinearity if VIF values remain below critical thresholds. 
+
+
+# Problem 2
+
+## 2.1) The first-order response function to be used in the study is:
+
+$Y = \beta_0 + \beta_1x_1 + \beta_1x_1 + \beta_2x_2 + \beta_3x_3 + \beta_4x_4 + \epsilon$
+
+
+## 2.2) Develop the response function for each type of lamp.
+
+$Y_{Led} = \beta_0 + \beta_1x + \beta_2 = (\beta_0 + \beta_2) + \beta_1x$
+
+$Y_{Incandescent} = \beta_0 + \beta_1x + \beta_3 = (\beta_0 + \beta_3) + \beta_1x$
+
+$Y_{Halogen} = \beta_0 + \beta_1x + \beta_4 = (\beta_0 + \beta_4) + \beta_1x$
+
+$Y_{Fluorescent} = \beta_0 + \beta_1x$ 
+
+
+## 2.3) Specify the null and alternative hypotheses for the following question. With the humidity level fixed, is the survival time of the LED bulb more than the survival time for incandescent bulb?
+
+$H_0: \beta_2 \le \beta_3$
+
+$H_1: \beta_2 > \beta_3$
+
+
+## 2.4) Interpret the value $\beta_3$ and what does it represent.
+
+$\beta_3$ represents the difference in mean survival time between incandescent bulbs and fluorescent bulbs, after controlling for humidity.
+
+
+# Problem 3
+
+## 3.1) Write an expression for $Y = \beta_0 + \beta_1x_1 + \epsilon_i, i = 1,..,4$  using matrices and vectors
+
+$Y = X\beta + \epsilon$
+
+\[
+\begin{bmatrix}
+7 \\
+11 \\
+3 \\
+10
+\end{bmatrix}
+=
+\begin{bmatrix}
+1 & -3 \\
+1 & -2 \\
+1 & 5 \\
+1 & -1
+\end{bmatrix}
+\begin{bmatrix}
+\beta_0 \\
+\beta_1
+\end{bmatrix}
++
+\begin{bmatrix}
+\varepsilon_1 \\
+\varepsilon_2 \\
+\varepsilon_3 \\
+\varepsilon_4
+\end{bmatrix}
+\]
+
+
+## 3.2) Set up and solve the b vector.
+
+```{r message=FALSE, warning=FALSE}
+# Define X matrix (with intercept column)
+X <- matrix(c(1, 1, 1, 1,
+              -3, -2, 5, -1), 
+            nrow = 4, byrow = FALSE)
+
+# Define Y vector
+Y <- matrix(c(7, 11, 3, 10), nrow = 4, byrow = FALSE)
+
+# i) X'X
+XtX <- t(X) %*% X
+XtX
+
+# ii) (X'X)^-1
+XtX_inv <- solve(XtX)
+XtX_inv
+
+# iii) X'Y
+XtY <- t(X) %*% Y
+XtY
+
+# iv) b = (X'X)^-1 %*% X'Y
+b <- XtX_inv %*% XtY
+b
+```
+
+## 3.3) Calculate the Hat matrix H
+
+```{r message=FALSE, warning=FALSE}
+# Compute Hat matrix: H = X (X'X)^(-1) X'
+XtX_inv <- solve(t(X) %*% X)
+H <- X %*% XtX_inv %*% t(X)
+H
+```
+
+
+# Problem 4
+
+HURRICANES is a data set of two columns. Column 1 is the year, between 1870 and 2010, and column 2 is the number of Atlantic hurricanes. Using the best possible ARIMA model, according to your analysis, please provide the R output for the model and answer the following questions:
+
+```{r message=FALSE, warning=FALSE}
+#Load Packages
+library(lubridate)
+library(forecast)
+library(tseries)
+library(ggplot2)
+
+
+# Loading Hurrucanes data set
+timedata <- read.csv("~/R for Statistics and Data Science (STAT-5521G)/timedata.txt", sep="")
+```
+
+
+```{r message=FALSE, warning=FALSE}
+timedata$Number_of_Hur <- ts(timedata$Number_of_Hur)
+
+autoplot(timedata$Number_of_Hur) +
+  ggtitle("Time Series Plot of the Number of Atlantic hurricanes") +
+  labs(x = "Years", y = "Number of Atlantic hurricanes")+
+  theme_minimal()
+```
+
+
+## 4.1.	Does the data look stationary? Provide the R output. Do you need any transformation if you do provide an R output for it? 
+
+**Null Hypothesis:** The time series is non-stationary. 
+
+**Alternative Hypothesis:** The time series is stationary.
+
+```{r message=FALSE, warning=FALSE}
+# Plot ACF and PACF
+acf(timedata$Number_of_Hur, main = "ACF of Number of Atlantic hurricanes")
+pacf(timedata$Number_of_Hur, main = "PACF of Number of Atlantic hurricanes")
+
+# Perform Augmented Dickey-Fuller Test
+adf.test(timedata$Number_of_Hur)
+```
+
+**Decision and Conclusion:** Since the p-value associated with the Dickey-Fuller test is greater than 0.05, we have all evidence to conclude that the data is non-stationary. Therefore, transformation and differencing of the data is inevitable. 
+
+
+## 4.2.	Provide an R output for test for stationarity.
+
+```{r message=FALSE, warning=FALSE}
+#Transformation and Differencing
+diff_timedata <- diff(timedata$Number_of_Hur)
+
+# Test of Stationary
+adf.test(diff_timedata)
+```
+**Decision and Conclusion:** Since the p-value associated with the Dickey-Fuller test is lesser than 0.05 level of significance, we have all evidence to conclude that the data is stationary. Therefore, we can go ahead to modeling our data.
+
+
+## 4.3.	What is the order of the ARIMA model? Provide the R output of how did you find it?
+
+```{r message=FALSE, warning=FALSE}
+model <- arima(diff_timedata, order = c(0,1,1))
+
+summary(model)
+```
+
+## 4.4.	Report the theoretical model with the corresponding parameters. 
+$$
+\nabla Y_t = Y_t - Y_{t-1} = \varepsilon_t + \theta_1 \varepsilon_{t-1}
+$$
+Where:
+- \( Y_t \) is the original time series at time \( t \)
+- \( \nabla Y_t \) represents the first difference
+- \( \varepsilon_t \) is the white noise (error term)
+- \( \theta_1 \) is the MA(1) coefficient
+
+
+## 4.4.	Report the theoretical model with the corresponding parameters. 
+$$
+\nabla Y_t = Y_t - Y_{t-1} = \varepsilon_t + \theta_1 \varepsilon_{t-1}
+$$
+Where:
+- \( Y_t \) is the original time series at time \( t \)
+- \( \nabla Y_t \) represents the first difference
+- \( \varepsilon_t \) is the white noise (error term)
+- \( \theta_1 \) is the MA(1) coefficient
+
+$\theta_1 = -0.8341$
+
+$c = 0.0694$
+
+Final Model is: $Y_t = Y_{t-1} + 0.0694 + \epsilon_t - 0.8341\epsilon_{t-1}$
+
+
+## 4.5.	Provide an estimated value for the parameters, using R and the fitted model output. 
+
+| Parameter        | Estimate    | Std. Error |
+| ---------------- | ----------- | ---------- |
+| $\theta_1$ (MA1) | **–0.8341** | 0.0395     |
+| $c$ (Drift)      | **0.0694**  | 0.0443     |
+
+
+
+## 4.6.	Provide a forecast plot for the model using R, use the function forecast(auto.arima()) to forecast the hurricanes. Do you believe that there will be more hurricanes in 2011 year. Approximately how many more/less hurricanes do you expect as a percentage for 2011in comparison to  2010?
+
+
+```{r message=FALSE, warning=FALSE}
+# Fit the model
+model_auto <- auto.arima(timedata$Number_of_Hur)
+
+# Forecast next 1 year (e.g., 12 months if monthly data or 1 period if yearly data)
+fc <- forecast(model_auto, h = 1)
+
+# Plot the forecast
+autoplot(fc) +
+  ggtitle("Forecast of Hurricanes for 2011") +
+  xlab("Year") + ylab("Number of Hurricanes")+
+  theme_minimal()
+```
+
+```{r}
+predicted_2011 <- 15.24614
+actual_2010 <- 19
+percent_change <- 100 * (predicted_2011 - actual_2010) / actual_2010
+
+paste("The number of hurricanes expected in 2011 is", round(percent_change,2),"%")
+```
+
+
+

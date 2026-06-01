@@ -1,0 +1,138 @@
+---
+title: "Home Work 11"
+author: "Moshood A Garuba"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1:
+Use the penguins data set from the palmerpenguins package to recreate this plot.
+
+```{r message=FALSE, warning=FALSE}
+library(palmerpenguins)
+library(tidyverse)
+library(readxl)
+library(tibble)
+
+penguins %>% 
+  ggplot(aes(x = species, y = body_mass_g))+
+  geom_boxplot(aes( fill = species))+
+  labs(title = "Boxplots of body mass across species", y = "Body mass (grems)", x = "Species")+
+  theme_minimal()
+```
+
+
+# Here is an illustration I use in Mathematical Statistics II. I’ll give you the code that produces the raw data. Perform any necessary data transformations and recreates the plot.
+
+```{r message=FALSE, warning=FALSE}
+m <- 10000 # number of trials to run
+n <- 8 # sample size for each trial
+sigma <- 1 # population standard deviation
+set.seed(1234)
+
+bessel_corrected <- numeric(m)
+#without bessel's correction; n in denominator instead of n-1
+not_corrected <- numeric(m)
+
+for (i in 1:m) {
+  x <- rnorm(n, mean = 0, sd = sigma)
+  bessel_corrected[i] <- (1 / (n - 1)) * sum((x - mean(x))^2)
+  not_corrected[i] <- (1 / n) * sum((x - mean(x))^2)
+}
+
+
+my_data <- tibble(
+  `Bessel corrected` = bessel_corrected,
+  `Not corrected` = not_corrected
+) |>
+  pivot_longer(cols = everything(), names_to = "Method", values_to = "Estimate") |>
+  mutate(Method = factor(Method))  
+
+
+bessel_mean <- mean(bessel_corrected)
+notcorr_mean <- mean(not_corrected)
+
+
+my_data |>
+  ggplot(aes(x = Estimate, fill = Method)) +
+  geom_density(alpha = 0.5, color = "black") +
+
+  
+  geom_point(data = tibble(x = c(bessel_mean, notcorr_mean),
+                           y = c(0, 0),
+                           Method = c("Bessel corrected", "Not corrected")),
+             aes(x = x, y = y),
+             color = c("red", "darkcyan"), size = 2, inherit.aes = FALSE) +
+  geom_label(data = tibble(
+               x = c(bessel_mean + 0.89, notcorr_mean - 0.45),
+               y = c(0.00, 0.055),
+               label = c("Bessel corrected mean", "Not corrected mean")),
+             aes(x = x, y = y, label = label),
+             fill = c("salmon", "cyan"),
+             color = "black", size = 3, inherit.aes = FALSE) +
+
+  
+  annotate("segment",
+           x = bessel_mean + 0.20, xend = bessel_mean,
+           y = 0.00, yend = 0.00,
+           color = "black", arrow = arrow(length = unit(0.1, "cm"))) +
+
+  annotate("segment",
+           x = notcorr_mean - 0.19, xend = notcorr_mean,
+           y = 0.03, yend = 0.002,
+           color = "black", arrow = arrow(length = unit(0.1, "cm"))) +
+
+  labs(
+    title = "Comparison of Bessel corrected vs Not corrected estimates",
+    x = "Standard deviation estimate",
+    y = "Density"
+  ) +
+  theme_minimal()
+```
+
+
+
+# Question 3:
+
+ (Grad student only) Below is a graphic I created for a 2022 publication. The raw data is in the file multi_dim_disc.csv. Recreate the image. This will require some data transformation before the call to `ggplot()`. Here are some tips on the data transformation part. It is safe to ignore or remove the X1 through X6 variables (they were used to calculate the Disc column but not needed after). The Unif level of the Methods variable was renamed to PR (pseudo-random). You’ll also need to convert some columns to factors, and perhaps change the names of some of the levels. `group_by()` and `summarize()` were used to calculate mean discrepancy across levels of the appropriate variables.
+
+```{r message=FALSE, warning=FALSE}
+multi_dim <- read.csv("multi_dim_disc.csv")
+
+#Excluding variables X1 to X6 and rename Unif to PR
+  
+multi_dim_new <-  multi_dim %>% 
+                   select(-c(2:7)) %>% 
+                    mutate(Method = if_else(Method == "Unif", "PR", Method),
+                     State_Dims = paste0(State_Dims, "-State Dimension"),
+                       Action_Dims = paste0(Action_Dims, "-Action Dimension"),
+                        State_Dims = as.factor(State_Dims),
+                         Action_Dims = as.factor(Action_Dims))
+
+multi_dim_new$State_Dims <- as.factor(multi_dim_new$State_Dims)
+multi_dim_new$Action_Dims <- as.factor(multi_dim_new$Action_Dims)
+
+levels(multi_dim_new$Action_Dims) <- c("1" = "1-Action Dimension",
+                                            "2" = "2-Action Dimensions",
+                                                "3" = "3-Action Dimensions")
+levels(multi_dim_new$State_Dims) <- c("1" = "1-State Dimension",
+                                        "2" = "2-State Dimensions",
+                                          "3" = "3-State Dimensions")
+
+
+result <- multi_dim_new |>
+            group_by(Method, State_Dims, Action_Dims, Time) |>
+                  summarize(`Mean Discrepancy Estimate` = mean(Disc))
+
+ggplot(result, aes(x = Time, y = `Mean Discrepancy Estimate`,
+colour = Method, linetype = Method)) +
+geom_smooth() +
+facet_grid(rows = vars(State_Dims), cols = vars(Action_Dims)) +
+xlab("Number of Steps")+
+  theme_minimal()
+```
+

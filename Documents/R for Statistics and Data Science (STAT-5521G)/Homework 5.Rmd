@@ -1,0 +1,107 @@
+---
+title: "Homework 5"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+Rewrite this line using the pipe.
+`hour <- as.numeric(format(Sys.time(), format = "%H"))`
+
+```{r}
+hour <- Sys.time() |> 
+  format("%H") |> 
+  as.numeric()
+
+hour
+
+```
+
+# Question 2
+his is a tricky problem, and will require a lot of the skills covered up to this point. If you get stuck, use the debugging methods covered.
+Load the MASS library and use the Cars93 dataset for this problem. An auto service center has a special for tune-ups and cleaning. They will charge  `$40` to replace each spark plug (there is one spark plug for each of the Cylinders), `$30` worth of oil for each liter of displacement or EngineSize, and `$2` per inch to vacuum the Rear.seat.room.
+You are the manager of a used car lot with inventory contained in Cars93, and you need to calculate the cost of having the entire lot serviced before they can be resold.
+
+## 2a.
+Use a for loop over the rows of the dataframe to find the total cost. Use an if statement to check and handle any special cases, such as the car with a rotary engine (no cylinders, only one spark plug) or the two-seater cars that don’t have a back seat (no vacuuming cost).
+Hint: Most of the Cylinders values appear to be numeric, but it is a factor. Read the Warning section of the ?factor documentation to see the proper way to convert them to numeric.
+
+```{r}
+# Load necessary library
+library(MASS)
+
+# Load Cars93 dataset
+data("Cars93")
+
+# Convert Cylinders to numeric, treating "rotary" as 1
+Cars93$Cylinders <- as.numeric(as.character(Cars93$Cylinders))
+Cars93$Cylinders[is.na(Cars93$Cylinders)] <- 1  # Assign 1 for rotary engines
+
+# Initialize total cost
+total_cost <- 0
+
+# Loop over each row in the dataframe
+for (i in 1:nrow(Cars93)) {
+  car <- Cars93[i, ]  # Extract the current row
+  
+  # Cost calculations
+  spark_plug_cost <- car$Cylinders * 40
+  oil_cost <- car$EngineSize * 30
+  
+  # Handle the two-seater cars that don't have a back seat
+  if (is.na(car$Rear.seat.room)) {
+    vacuum_cost <- 0
+  } else {
+    vacuum_cost <- car$Rear.seat.room * 2
+  }
+  
+  # Total cost for the car
+  car_cost <- spark_plug_cost + oil_cost + vacuum_cost
+  total_cost <- total_cost + car_cost
+}
+
+paste("The total service cost for all car is", total_cost)
+```
+
+
+## 2b. 
+
+```{r}
+# Convert NA values in Rear.seat.room to 0 (since no vacuuming cost applies)
+Cars93$Rear.seat.room[is.na(Cars93$Rear.seat.room)] <- 0
+
+# Compute costs for all cars
+spark_plug_costs <- Cars93$Cylinders * 40
+oil_costs <- Cars93$EngineSize * 30
+vacuum_costs <- Cars93$Rear.seat.room * 2
+
+# Total cost across all cars
+total_cost_vectorized <- sum(spark_plug_costs + oil_costs + vacuum_costs)
+
+paste("Total service cost using vectorized calculation is", total_cost_vectorized)
+```
+
+
+## (Grad student only) In addition to the for loop solution, create a solution using only componentwise calculations. For a bonus, create a solution using `apply()`.
+```{r}
+total_cost_apply <- sum(apply(Cars93, 1, function(car) {
+  cylinders <- as.numeric(as.character(car["Cylinders"]))
+  if (is.na(cylinders)) cylinders <- 1  # Handle rotary case
+  
+  engine_size <- as.numeric(car["EngineSize"])
+  rear_seat_room <- as.numeric(car["Rear.seat.room"])
+  if (is.na(rear_seat_room)) rear_seat_room <- 0  # Handle two-seater case
+  
+  # Compute cost for this car
+  (cylinders * 40) + (engine_size * 30) + (rear_seat_room * 2)
+}))
+
+paste("The total service cost using `apply()` is", total_cost_apply)
+```
+
+

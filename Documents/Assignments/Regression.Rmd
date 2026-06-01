@@ -1,0 +1,236 @@
+---
+title: "Applied Regression Ass 1"
+author: "Daniel Olofin"
+date: "2025-09-04"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## (a) Why is the model linear and non-linear?
+
+We model the circle area \(A\) as
+\[
+A=\beta_0+\beta_1 x^2+\varepsilon.
+\]
+- **Linear (in parameters):** The mean function is an affine combination of \(\beta_0,\beta_1\); i.e., linear in the unknown coefficients.  
+- **Non-linear (in predictor):** The regressor is \(x^2\), a non-linear transform of \(x\).
+
+## (b) Interpretations of \(\beta_0\) and \(\beta_1\)
+
+- \(\beta_0\): Expected area when \(x=0\) (intercept). For true circles, we expect \(\beta_0\approx 0\).  
+- \(\beta_1\): Expected change in area **per unit increase in \(x^2\)**. Geometrically, the true value is \(\pi\) since \(A=\pi x^2\).
+
+## (c) Why include the error term \(\varepsilon\)? Give two sources.
+
+We include \(\varepsilon\) to capture randomness and model imperfections, e.g.:
+- **Measurement error** in radius or area.
+- **Omitted factors/model misspecification** (e.g., deformation, thickness), rounding, and sampling variability.
+
+## (d) Sample version for \(n\) observations
+
+For \(i=1,\dots,n\),
+\[
+A_i=\beta_0+\beta_1 x_i^2+\varepsilon_i,
+\qquad \mathbb{E}[\varepsilon_i]=0,\ \ \mathrm{Var}(\varepsilon_i)=\sigma^2.
+\]
+
+## (e) Vector/matrix form and dimensions
+
+Let
+\[
+\mathbf{A}=
+\begin{bmatrix}
+A_1\\ \vdots\\ A_n
+\end{bmatrix}_{n\times 1},\quad
+\mathbf{X}=
+\begin{bmatrix}
+1 & x_1^2\\
+\vdots & \vdots\\
+1 & x_n^2
+\end{bmatrix}_{n\times 2},\quad
+\boldsymbol{\beta}=
+\begin{bmatrix}
+\beta_0\\ \beta_1
+\end{bmatrix}_{2\times 1},\quad
+\boldsymbol{\varepsilon}=
+\begin{bmatrix}
+\varepsilon_1\\ \vdots\\ \varepsilon_n
+\end{bmatrix}_{n\times 1}.
+\]
+Then
+\[
+\mathbf{A}=\mathbf{X}\boldsymbol{\beta}+\boldsymbol{\varepsilon}.
+\]
+**Dimensions:** \(\mathbf{A}\in\mathbb{R}^{n\times 1}\), \(\mathbf{X}\in\mathbb{R}^{n\times 2}\), \(\boldsymbol{\beta}\in\mathbb{R}^{2\times 1}\), \(\boldsymbol{\varepsilon}\in\mathbb{R}^{n\times 1}\).
+
+## (f) Use to fit the model to the data (see next slide)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+radius <- c(1,2,3,4,5,6)
+radius_squared <- radius^2
+area <- c(3.5,12.9,27.8,52.1,79.0,113.5)
+
+our_data <- data.frame(radius,radius_squared, area)
+```
+
+### (i) Graph a scatterplot for A against x^2
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot(y = our_data$area, x = our_data$radius_squared,
+     col = "blue", main = "Scatterplot for A against radius square", ylab = "Area", xlab = "Radius square")
+```
+
+### (iii) Run linear regression analysis in R for the simple linear regression model. Copy the output and write the equation for the fitted model.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+fit <- lm(area~radius_squared, data = our_data)
+
+summary(fit)
+
+```
+
+\[
+\hat{A} = \texttt{0.34068} + \texttt{3.15116} \cdot (\text{radius}^2)
+\]
+
+### (iii) Using R, graph the fitted model on the scatterplot  in (i)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot(y = our_data$area, x = our_data$radius_squared,
+     col = "blue", main = "Scatterplot for A against radius square", ylab = "Area", xlab = "Radius square")
+
+abline(lm(area~radius_squared, data = our_data), col ="red")
+```
+
+
+## (g) Compare simple vs. multiple regression
+
+We compare  
+- **Simple model:** \(A=\beta_0+\beta_1 x^2+\varepsilon\)  
+- **Multiple model:** \(A=\beta_0+\beta_1 x+\beta_2 x^2+\varepsilon\)  
+with \(x=\texttt{radius}\), \(x^2=\texttt{radius\_squared}\).
+
+### (i) Why is \(A=\beta_0+\beta_1 x+\beta_2 x^2+\varepsilon\) linear **and** multiple?
+- **Linear (in parameters):** \(A\) is an affine function of the unknowns \(\beta_0,\beta_1,\beta_2\) (no products/powers of \(\beta\)’s).  
+- **Multiple:** it uses **two regressors** (\(x\) and \(x^2\)) for one response, hence a multiple regression.
+
+### (ii) Sample (observation-level) model
+For \(i=1,\dots,n\):  
+\[
+A_i=\beta_0+\beta_1 x_i+\beta_2 x_i^2+\varepsilon_i,\qquad
+\mathbb E[\varepsilon_i]=0,\ \text{Var}(\varepsilon_i)=\sigma^2.
+\]
+
+### (iii) Vector/matrix form and dimensions
+Let  
+\[
+\mathbf A=
+\begin{bmatrix}A_1\\ \vdots\\ A_n\end{bmatrix}_{n\times1},\quad
+\mathbf X=
+\begin{bmatrix}
+1 & x_1 & x_1^2\\
+\vdots & \vdots & \vdots\\
+1 & x_n & x_n^2
+\end{bmatrix}_{n\times3},\quad
+\boldsymbol\beta=
+\begin{bmatrix}\beta_0\\ \beta_1\\ \beta_2\end{bmatrix}_{3\times1},\quad
+\boldsymbol\varepsilon=
+\begin{bmatrix}\varepsilon_1\\ \vdots\\ \varepsilon_n\end{bmatrix}_{n\times1}.
+\]
+Then \(\mathbf A=\mathbf X\boldsymbol\beta+\boldsymbol\varepsilon\).  
+**Dimensions:** \(\mathbf A\in\mathbb R^{n\times1}\), \(\mathbf X\in\mathbb R^{n\times3}\), \(\boldsymbol\beta\in\mathbb R^{3\times1}\), \(\boldsymbol\varepsilon\in\mathbb R^{n\times1}\).
+
+
+### (iv) Graph a scatterplot for A against x
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot(y = our_data$area, x = our_data$radius,
+     col = "blue", main = "Scatterplot for A against radius ", ylab = "Area", xlab = "Radius")
+```
+
+### (v) Run linear regression analysis in R for the simple linear regression model. Copy the output and write the equation for the fitted model.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+fit_mul <- lm(area~radius+radius_squared, data = our_data)
+
+summary(fit_mul)
+
+```
+
+\[
+\hat{A} = -0.2100 + 0.3868 \cdot (\text{radius}) + 3.0982 \cdot (\text{radius}^2)
+\]
+
+### (vi) Using R, graph the fitted model on the scatterplot  in (i)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# scatter
+plot(x = our_data$radius, y = our_data$area,
+     col = "blue", main = "Scatterplot for Area vs Radius",
+     xlab = "Radius", ylab = "Area", pch = 16)
+
+# grid of x values over the observed range
+xx <- seq(min(our_data$radius, na.rm = TRUE),
+          max(our_data$radius, na.rm = TRUE),
+          length.out = 400)
+
+# build newdata matching model terms
+nd <- data.frame(
+  radius = xx,
+  radius_squared = xx^2   # required because your model uses this column
+)
+
+# get fitted curve and draw it
+yy <- predict(fit_mul, newdata = nd)
+lines(xx, yy, lwd = 2, col = "red")
+
+```
+
+
+### (vii) Compare models using Adjusted \(R^2\)
+
+From *Elementary Statistics*: the adjusted coefficient of determination penalizes extra
+predictors and is
+\[
+\bar{R}^2 \;=\; 1 \;-\; \frac{\text{SSE}/(n-p)}{\text{SST}/(n-1)},
+\]
+where \(n\) is the sample size, \(p\) is the number of estimated parameters (including the
+intercept), \(\text{SSE}\) is the residual sum of squares, and \(\text{SST}\) is the total sum of squares.
+
+We use \(\bar{R}^2\) to compare:
+
+- **Simple model:** \(A \sim x^2\) (only `radius_squared`)
+
+- **Multiple model:** \(A \sim x + x^2\) (`radius` and `radius_squared`)
+
+The model with the **higher** \(\bar{R}^2\) achieves a better balance of fit and parsimony.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Fit models
+fit_simple   <- lm(area ~ radius_squared, data = our_data)
+fit_multiple <- lm(area ~ radius + radius_squared, data = our_data)
+
+# Extract adjusted R^2
+adjR2_simple   <- summary(fit_simple)$adj.r.squared
+adjR2_multiple <- summary(fit_multiple)$adj.r.squared
+
+c(Adjusted_R2_Simple = adjR2_simple,
+  Adjusted_R2_Multiple = adjR2_multiple)
+
+```
+
+**Interpretation:** **Results:**
+
+- Adjusted \(R^2\) (Simple model, \(A \sim x^2\)): **0.9996**
+- Adjusted \(R^2\) (Multiple model, \(A \sim x + x^2\)): **0.9995**
+
+**Interpretation:**
+
+Although both models explain almost all the variation in the data, the **simple regression model** with only \(x^2\) yields a slightly higher adjusted \(R^2\) (0.9996 vs. 0.9995).  
+
+Because adjusted \(R^2\) penalizes model complexity, this indicates that adding the linear term \(x\) does not improve model performance sufficiently to justify the extra parameter. Therefore, the **simple quadratic model** provides a more balanced fit than the multiple regression model.

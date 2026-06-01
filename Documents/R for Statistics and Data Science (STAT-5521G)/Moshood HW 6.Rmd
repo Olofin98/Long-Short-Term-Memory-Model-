@@ -1,0 +1,70 @@
+---
+title: "Homework 6"
+author: "Moshood A. Garuba"
+date: "27-03-2025"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1:
+(Grad version) Reproduce this plot as closely as you can. Hint: Read the plotmath documentation, and consider the construction expression(paste(...)).
+
+```{r}
+# Set up the x-axis values
+x <- seq(0, 8, length.out = 100)
+
+# Plot the first chi-square density curve
+plot(x, dchisq(x, df = 1), type = "l", lwd = 1.5, col = "black",
+     xlab = expression(italic(x)), ylab = "Density",
+     main = expression("The " ~ chi^2 ~ " density"),
+     ylim = c(0, 0.4))
+
+# Add additional density curves
+lines(x, dchisq(x, df = 3), col = "red", lwd = 1.5, lty = 2)
+lines(x, dchisq(x, df = 5), col = "blue", lwd = 1.5, lty = 3)
+
+# Add a legend
+legend("topright", legend = c(expression(chi^2 ~ " w/ df = 1"),
+                               expression(chi^2 ~ " w/ df = 3"),
+                               expression(chi^2 ~ " w/ df = 5")),
+       col = c("black", "red", "blue"), lty = c(1, 2, 3), lwd = 1.5)
+
+# Add annotation
+text(4.5, 0.25, "See how the peak shifts right as degrees of freedom increases!", cex = 0.6)
+
+```
+
+# Question 2:
+eproduce this plot as closely as you can. I’ll get you started with the first two lines that produce the data. Create the appropriate formula objects to pass into lm(), and extract the $fitted.values object to plot the prediction curve. Hint: To avoid repetition in your code, can you use lapply() to iterate over degrees and colors?
+
+```{r}
+# Generate data
+x <- seq(1, 10, 0.5)
+y <- sin(x)
+
+# Scatter plot of original data
+plot(x, y, col = "orange", pch = 1, ylim = c(-1, 1),
+     main = "Polynomial approximation of sin(x)",
+     xlab = "x", ylab = "y")
+
+# Degrees and corresponding colors
+degrees <- 1:5
+colors <- c("red", "blue", "green", "orange", "gray")
+
+# Fit models and add lines
+fits <- lapply(degrees, function(d) {
+  model <- lm(y ~ poly(x, d, raw = TRUE))
+  lines(x, model$fitted.values, col = colors[d], lwd = 2)
+  return(model)
+})
+
+# Add legend
+legend("top", 
+       legend = paste("Degree", degrees), 
+       col = colors, lwd = 2, bty = "n", cex = 0.8)
+```   
+
+

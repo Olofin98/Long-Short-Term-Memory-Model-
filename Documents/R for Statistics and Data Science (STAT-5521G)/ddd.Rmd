@@ -1,0 +1,262 @@
+---
+title: 'Brewing Insights: Cleaning, Exploring, and Analyzing 10,000 Messy Cafe Sales
+  Records to Drive Business Strategy'
+author: "Moshood A. Garuba"
+date: "2025-05-03"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Project Goal:
+To clean and analyze messy transactional sales data from The Dirty Cafe to uncover customer behavior, top-selling items, revenue trends, and operational inefficiencies. Ultimately, the analysis will inform data-driven decisions to increase revenue, optimize inventory, and enhance customer experience.
+
+# Narrative & Structure:
+
+## 1.  Introduction / Business Background:
+The Dirty Cafe is a fast-growing urban café chain with multiple outlets. Recently, the café started recording digital sales, but data entry issues and inconsistent systems have introduced messiness into the dataset. As a data analyst, you're tasked with transforming the raw data into actionable business insights to support growth.
+
+```{r message=FALSE, warning=FALSE}
+# Load required libraries
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(janitor)
+library(dplyr)
+library(kableExtra)
+library(naniar)
+library(lubridate)
+library(dlookr)
+library(patchwork)
+library(gt)
+library(gtsummary)
+library(report)
+
+# Read the CSV
+cafe_data <- read_csv("dirty_cafe_sales.csv")
+```
+
+## 2. Data Cleaning:
+```{r message=FALSE, warning=FALSE}
+#Checking the names of the variables
+names(cafe_data)
+
+# Checking the structure of the variables
+glimpse(cafe_data)
+
+# Checking the number of rows and columns
+dim(cafe_data)
+
+# Getting the head of the data
+head(cafe_data) %>% kable()
+
+# Getting the tail of the data
+
+tail(cafe_data) %>% kable()
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#Visualizing missing data
+gg_miss_var(cafe_data)
+
+#Calculating the total missing data
+
+sum(!complete.cases(cafe_data))
+```
+
+```{r}
+#Fixing data problem
+
+cafe_data_cleaned <- cafe_data %>%
+  mutate(
+    Quantity = as.numeric(Quantity),
+    `Price Per Unit` = as.numeric(`Price Per Unit`),
+    `Total Spent` = as.numeric(`Total Spent`),
+    `Transaction Date` = as.Date(`Transaction Date`)
+  ) %>%
+  mutate(across(where(is.character), str_to_sentence))
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+plot_na_pareto(cafe_data_cleaned)
+```
+
+**We have a large number of Na which dropping them we left us with no or little data. I explore other ways of handling missing values.**
+
+
+```{r message=FALSE, warning=FALSE}
+#replace "Na" with the tag "missing"
+cafe_data_cleaned<- cafe_data_cleaned %>%
+  mutate(across(where(is.character), ~ replace_na(., "Missing")))
+
+str(cafe_data_cleaned)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# We are trying to iterate a better method for imputing the missing values for Quantity
+imputate_na(cafe_data_cleaned,Quantity,method = "median") %>% plot()
+#imputate_na(cafe_data_cleaned,Quantity,method = "mean") %>% plot()
+#imputate_na(cafe_data_cleaned,Quantity,method = "mode") %>% plot()
+
+#For Total spent
+imputate_na(cafe_data_cleaned,`Total Spent`,method = "median") %>% plot()
+#imputate_na(cafe_data_cleaned,`Total Spent`,method = "mean") %>% plot()
+#imputate_na(cafe_data_cleaned,`Total Spent`,method = "mode") %>% plot()
+
+#For Price Per Unit
+imputate_na(cafe_data_cleaned,`Price Per Unit`,method = "median") %>% plot()
+#imputate_na(cafe_data_cleaned,`Price Per Unit`,method = "mean") %>% plot()
+#imputate_na(cafe_data_cleaned,`Price Per Unit`,method = "mode") %>% plot()
+
+cafe_data_cleaned<- cafe_data_cleaned %>% 
+  mutate(Quantity = imputate_na(cafe_data_cleaned,Quantity,method = "median"),
+         `Total Spent` = imputate_na(cafe_data_cleaned,`Total Spent`,method = "median"),
+         `Price Per Unit` = imputate_na(cafe_data_cleaned,`Price Per Unit`,method = "median"))
+
+```
+**Observation:** I have used Machine Learning Techniques to fill in the missing values. Looking at this chart above showing the original data set with missing values and the pattern of the chart after filling the values.
+
+
+# 3. Exploratory Data Analysis (EDA)
+
+## Descriptive Analysis of Quantity, Price Per Unit and Total Spent.
+```{r message=FALSE, warning=FALSE}
+cafe_data_cleaned %>%
+  select(Quantity, `Price Per Unit`, `Total Spent`) %>%
+  summarise(across(everything(), 
+                   .fns = list(
+                     min = ~min(.x, na.rm = TRUE),
+                     median = ~median(.x, na.rm = TRUE),
+                     average = ~mean(.x, na.rm = TRUE)
+                   ))) %>%
+  pivot_longer(cols = everything(),
+               names_to = c("Variable", "Statistic"),
+               names_sep = "_",
+               values_to = "Value") %>%  kable()
+```
+
+
+## What are the Item distribution?
+
+```{r}
+cafe_data_cleaned %>% 
+  group_by(Item) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x = Item, y = sort(n)))+
+  geom_bar(stat = "Identity", aes(fill = Item), 
+           show.legend = F)+
+  labs(title = "Item Distribution", x = "Items", y = "Frequency")+
+  theme_minimal()
+
+```
+
+
+## What are the items sold by quantity and revenue?
+
+```{r}
+
+cafe_data_cleaned %>%
+  group_by(Item) %>%
+  summarise(
+    `Total Quantity` = sum(Quantity, na.rm = TRUE),
+    `Total Revenue` = sum(`Total Spent`, na.rm = TRUE)
+  ) %>%
+  top_n(n = 10, wt = `Total Revenue`) %>% kable()
+
+```
+
+## 
+```{r message=FALSE, warning=FALSE}
+cafe_data_cleaned %>% 
+  group_by(`Payment Method`) %>% 
+  summarise(n = n()) %>% 
+  arrange(n) %>% kable()
+```
+
+```{r}
+cafe_data_cleaned %>% 
+  group_by(`Payment Method`) %>% 
+  summarise(n = n()) %>%
+  ggplot(aes( x = `Payment Method`, y = sort(n)))+
+  geom_bar(aes(fill = `Payment Method`), stat = "Identity", show.legend = F)+
+  labs(title = "Payment Method Distribution", y = "Frequency")+
+  theme_minimal()
+```
+
+## Total Amount Spent
+```{r}
+cafe_data_cleaned %>% 
+  group_by(Item) %>% 
+  summarise(n = n(),
+            Total = sum(`Total Spent`),
+            `Average Amount Spent` = round(mean(`Total Spent`),2)) %>% 
+  arrange(n) %>% kable()
+```
+
+
+##
+
+```{r}
+cafe_data_cleaned %>% 
+  group_by(Location) %>% 
+  summarise(n = n(), 
+            `Total Quantity` = sum(Quantity),
+            `Average Quantity` = round(mean(Quantity),2)) %>% kable()
+```
+
+##
+
+```{r}
+cafe_data_cleaned %>% 
+  group_by(`Payment Method`,Location) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes( x= `Payment Method`, y = n))+
+  geom_bar(aes(fill = Location), stat = "identity",
+           position = "dodge")+
+  labs(title = "Distribution of Payment Method and Location",
+       y = "Frequency")+
+  theme_minimal()
+```
+
+
+```{r message=FALSE, warning=FALSE}
+cafe_data_cleaned %>% 
+  ggplot(aes(x = `Total Spent`, y = `Price Per Unit`))+
+  geom_point()
+```
+
+# Modeling and Inference
+
+
+
+```{r message=FALSE, warning=FALSE}
+cafe_data_cleaned %>% 
+  ggplot(aes(x = `Total Spent`, y = `Price Per Unit`))+
+  geom_point()+
+  geom_smooth(method = "lm")
+```
+
+
+
+```{r}
+model<- lm(Quantity~`Price Per Unit`, data = cafe_data_cleaned)
+
+summary(model)
+```
+
+
+# Conclusion
+
+This project explored the full data science workflow using the Dirty Cafe Sales dataset — a realistically messy dataset containing 10,000 café transactions. Through rigorous data cleaning, including handling missing values, correcting inconsistent formatting, and converting variables to appropriate types, we transformed a chaotic dataset into a reliable source for analysis.
+
+We then conducted exploratory data analysis (EDA), uncovering key business insights such as the most popular items, highest revenue-generating products, and patterns in purchasing behavior. Summary statistics helped describe central trends in spending, while visualizations and group-level aggregations highlighted the café’s top-performing offerings.
+
+Overall, this project showcased the importance of data cleaning as a foundational step in the data science process, and demonstrated how even initially unreliable data can yield valuable insights when properly wrangled. These insights can be used to guide business decisions, optimize inventory, and tailor marketing strategies to customer preferences.

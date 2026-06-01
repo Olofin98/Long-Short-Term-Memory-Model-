@@ -1,0 +1,336 @@
+---
+title: 'Stats101 R Lab 3: Comparing means and linear regression'
+output:
+  word_document: default
+  html_document:
+    fig_width: 10
+  pdf_document: default
+date: '2022-05-29'
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+rm(list = ls()) # clear our workspace. Always start with this
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("/Users/olofindo/Documents/Statsclinic")
+```
+
+
+# T-Tests
+
+## One sample t-test
+
+We use the one-sample t-test to compare the mean of a continuous
+variable (and its distribution) to a pre-specified mean. To use the
+t-test, we have to assume the data is normally distributed.
+
+t.test(x, y = NULL, mu = 0)
+
+### Example 1
+Dr. Samuel from Kossoh Town believes that
+citizens in his town consume calories differently during Eid
+celebrations than on regular days.  How can we test this assumption
+using a one sample t-test. Mean calorie consumption on regular days =
+2,100 Calories, Mean calories from sample of 100 people on Eid = 1,850
+Calories; SD = 300 calories
+
+To conduct one sample t-test where you don't have a dataset, you have to
+first create a dummy vector. Assuming a normal distribution, you can
+simulate the data you would have obtained if you had collected data from
+100 people in Kossoh Town.
+
+Null hypothesis: There is no sigificance difference in the calories consumed on Eid days from regular days
+Alternative hypothesis: There is sigificance difference in the calories consumed on Eid days from regular days
+
+```{r}
+eid <- rnorm(100, mean = 1850, sd = 300) 
+#rnorm(n, mean, sd)
+```
+
+Now, you can compare the data in the eid vector to the mean that was
+estimated on regular days
+
+```{r}
+t.test(eid, mu = 2100)
+
+t.test(eid, mu = 2100)
+```
+
+**What do you conclude?
+- Do you reject the null hypothesis?
+- Do you conclude that the calories consumed on Eid are different on average from the calories consumed on regular days?
+
+
+
+### Practice 1
+
+You are the new CMD at Lagos Hospital and you asked all 187 resident
+doctors how many hours they worked last week and you calculated a mean.
+You obtained a mean of 71.6 hours and a standard deviation of 16.9
+hours. Determine whether the calculated mean is significantly different
+from 40 hours, the typical number of hours for a work-week in the
+general population.
+
+H0: The hours of work by the residency Doc is not significantly less than 40 hours of standard work (>=)
+H1: The hours of work by the residency Doc is significantly less than 40 hours of standard work (<)
+
+```{r}
+hours <- rnorm(n = 187, mean = 71.6, sd = 16.9)
+
+t.test(hours, mu = 40, alternative = "less")
+
+```
+
+
+
+## Paired T-Test
+
+The paired samples t-test is used to assess whether there are
+significant differences between a pair of measurements from the same
+group of people. The typical example is a before-and-after situation.
+Describing whether your measurements are paired or independent is the
+most important step in using a T-test. If they are not paired, this is
+not the correct option.
+
+### Example 2
+You are the new CMD at Lagos Hospital and you asked all 187 resident
+doctors how many hours they worked last week and you calculated a mean.
+You obtained 71.6 hours and a standard deviation of 16.9 hours!
+
+After 12 weeks, you ask everyone how many hours they worked in the last
+week and obtain a mean of 63.8 and a standard deviation of 17.3. You
+want to know if your hiring practices changed the number of hours
+resident doctors work. Conduct a paired t-test to test the null
+hypothesis of no difference in hours worked.
+
+-- Here too, you don't have a dataset. So, you have to simulate a
+dataset, assuming normal distribution.
+
+```{r}
+set.seed(28)
+week0 <- rnorm(187, mean = 71.6, sd = 16.9) 
+```
+
+```{r}
+week12 <- rnorm(187, mean = 63.8, sd = 16.9) 
+```
+
+
+Here is the paired t-test code if you have two separate variables that are not in the same dataframe.
+
+t.test(x,y, paired = TRUE, alternative = "two.sided")
+```{r}
+
+
+
+t.test(week0, week12, paired = TRUE)
+t.test(week0, week12, paired = TRUE, alternative = "greater")
+```
+
+**How do you interpret your finding?
+
+
+You could also create a dataframe from week0 and week12 datasets, and then use a different approach for your t-test. But that is a longer path in this example. Lets try that.
+
+First, create a dataframe out of the week0 
+```{r}
+week0 <- as.data.frame(week0)
+
+#Assign a week variable
+week0$week <- as.numeric(0)
+
+#Rename the week0 vector within your new week0 dataframe
+library(data.table)
+#setnames(df, "oldname", "newname")
+setnames(week0, "week0", "hours")
+```
+
+Repeat the same for the week12 vector
+```{r}
+week12 <- as.data.frame(week12)
+
+#Assign a week variable
+week12$week <- as.numeric(12)
+
+#Rename the week12 vector within your new week12 dataframe
+setnames(week12, "week12", "hours")
+```
+
+Now, merge both dataframes.You can read about different ways to merge data in R here: https://www.datasciencemadesimple.com/join-in-r-merge-in-r/
+```{r}
+library(dplyr)
+weeks <- week0 %>%
+  rbind(., week12)
+
+weeks$week <- as.character(weeks$week)
+#Notice the pipe, %>%. It is from dplyr package and is very commonly used to manipulate or manage data in R
+```
+
+Now, lets do the T-test
+```{r}
+#t.test(formula, data, subset, na.action, ...)
+#formula usually takes the form of "dependent variable ~ independent variable"
+
+#t.test(response variable ~ predictor variable, paired = TRUE, data = weeks)
+t.test(hours ~ week, paired = T ,data = weeks)
+```
+
+
+### Example 3 - starting with a long dataframe
+You conduct a single-arm clinical trial to assess the effect of New Drug X on systolic blood pressure (SBP) among adults in Freetown and compare the SBP1, at the beginning of the trial, to SBP2, after 4 weeks of using the drug. 
+
+Import the SBP dataset. It is an SPSS dataset. 
+
+
+```{r}
+library(haven)
+sbp <- read_sav("FreetownSBP_dich.sav")
+```
+
+If you had a dataframe already, you can just use the formula approach
+
+```{r}
+#t.test(formula, data, subset, na.action, ...)
+#formula usually takes the form of "dependent variable ~ independent variable"
+
+t.test(SBP ~ week, paired = TRUE, data = sbp)
+```
+
+### Practice 2
+Dr. Samuel from Kossoh Town believes that citizens in his town consume calories differently during Eid celebrations than on regular days. He measured the calorie intake of 100 people on the eve of Eid and compared it to the calorie intake of the same people on Eid day.
+Mean calorie consumption on the eve of Eid = 2,100 Calories; SD = 150
+Mean calories consumption on Eid = 1,850 Calories; SD = 300 calories
+Conduct a paired t-test to compare calorie consumption on the eve of Eid to calorie consumption during Eid.
+
+
+
+## Independent sample T-Test
+The indepdent sample T-test is used when comparing the means in two groups of individuals 
+
+### Example 4
+A clinical trial randomly assigns 1,500 pregnant women to daily iron supplementation or placebo to assess whether iron supplementation increases hemoglobin by the time of delivery. Only 982 women were identified at the time of delivery. Others had either had a spontaneous abortion or did not return to the designated hospital for delivery. 
+
+You are given the data of hemoglobin concentration at the time of delivery and asked to compare the average hemoglobin in those who received iron vs placebo.
+
+First, import the dataset
+```{r}
+library(readr)
+irontrial <- read_csv("irontrial.csv")
+```
+
+Next, view the dataset
+```{r}
+head(irontrial, n=3)
+```
+Next, summarize the data
+```{r}
+library(tableone)
+vars <- c("hb")
+irontable <- CreateTableOne(vars = vars, strata =c("trt"), data = irontrial)
+
+summary(irontable)
+```
+
+```{r}
+boxplot(hb ~ trt, data=irontrial, ylab="Hemoglobin concentration, mg/dl", xlab="Iron treatment")
+abline(h=11, col = "blue", lty = 2)
+```
+
+
+```{r}
+#t.test(formula, data, subset, na.action, ...)
+#formula usually takes the form of "dependent variable ~ independent variable"
+
+t.test(hb ~ trt, alternative = "less" , data = irontrial)
+
+```
+What do you conclude?
+
+You can find the r documentation for the t-test here: https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/t.test
+
+
+
+# ANOVA
+What if we want to compare the mean across three or more groups?
+
+Three assumptions are required for ANOVA
+1) The data are normally distributed or sample size is large
+2) The standard deviations are approximately equal. This is called homoscedasticity.
+3) The samples are drawn independently.
+
+### Example 5
+You conduct a THREE-arm clinical trial to assess the effect of New Drug X on systolic blood pressure (SBP) among adults in Freetown and compare the SBP after 12 wweeks of using the drug. New Drug X is compared to an active comparator, Old Drug Y and to Placebo.
+
+Import the BP Trial dataset. It is a csv dataset. 
+
+
+```{r}
+library(readr)
+bptrial <- read_csv("bptrial.csv")
+```
+
+
+```{r}
+head(bptrial, n=3)
+```
+We can view the data using boxplots
+```{r}
+boxplot(SBP~treatment, data=bptrial, xlab = "Treatment arm", ylab="Systolic blood pressure, mmHg")
+```
+
+## Checking the assumptions
+We can confirm these assumptions from our knowledge of the data and the data generating process. We can also explore briefly.
+Assumption 1 - the data are normally distributed or sample size is large. If the sample size is large, typically we use >30 for convention, then, the assumption is met. We can also use a histogram to visually evaluate.
+```{r}
+hist(bptrial$SBP)
+```
+
+Assumption 2 -  The standard deviations are approximately equal.
+```{r}
+library(tableone)
+vars <- c("SBP")
+tab1 <- CreateTableOne(vars = vars, strata =c("treatment"), data = bptrial, includeNA = FALSE)
+summary(tab1)
+```
+
+Assumption 3 - The samples are drawn independently.
+We know that the data is from a randomized controlled trial. Therefore, each of the 3 arms were drawn independent. On the other hand, the data from a before-and-after study, for instance, would not be independent because knowing the elements of one data gives you some information that you could use to make a meaningful guess of the other elements.
+
+### Implementing The ANOVA
+Now, lets conduct the one way ANOVA
+```{r}
+# aov(variable_with_data ~ labeling_variable, data = data)
+goodmorning <- aov(SBP ~ treatment, data = bptrial)
+
+summary(goodmorning)
+```
+
+
+```{r}
+aov(SBP ~ treatment, data = bptrial)
+```
+
+You can use the Bonferroni correction to check whether each groups significantly differed from the other group
+```{r}
+#pairwise.t.test(x, g, p.adjust.method=”bonferroni”)
+
+pairwise.t.test(bptrial$SBP, bptrial$treatment, p.adjust.method="bonferroni")
+```
+**What do you conclude?
+
+
+### Practice 3
+You are the statistician on a trial of testosterone to treat low libido among postmenopausal women not taking estorgen. 811 eligible women were randomized to receive testosterone 300ug, testosterone 150ug, or placebo. Libido was assessed using the Female Sexual Function Profile Score, labeled as score in the dataset.
+Import the menopause.csv file for your analyses.
+
+
+
+```{r}
+
+```
+

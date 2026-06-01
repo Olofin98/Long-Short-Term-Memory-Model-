@@ -1,0 +1,165 @@
+---
+title: ""
+author: ""
+date: ""
+output:
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: true
+fontsize: 11pt
+geometry: margin=0.5in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(patchwork)
+
+set.seed(123)
+
+# --- model & design ---
+beta0 <- 50; beta1 <- 10; sigma <- 4
+x <- seq(1, 10, length.out = 20)
+n <- length(x); B <- 500
+Sxx  <- sum((x - mean(x))^2)
+xbar <- mean(x); x0 <- 5
+
+# --- one simulation ---
+sim_one <- function() {
+  y <- beta0 + beta1*x + rnorm(n, 0, sigma)
+  fit <- lm(y ~ x)
+  b0 <- unname(coef(fit)[1]); b1 <- unname(coef(fit)[2])
+
+  Eyx5 <- b0 + b1*x0
+
+  # (c) CI for slope (sigma known)
+  se_b1 <- sigma / sqrt(Sxx)
+  l_b1 <- b1 - 1.96*se_b1; u_b1 <- b1 + 1.96*se_b1
+  cover_b1 <- (l_b1 <= beta1 && beta1 <= u_b1)
+
+  # (d) CI for mean at x=5 (sigma known)
+  se_mu <- sigma * sqrt(1/n + (x0 - xbar)^2 / Sxx)
+  l_mu <- Eyx5 - 1.96*se_mu; u_mu <- Eyx5 + 1.96*se_mu
+  cover_mu <- (l_mu <= (beta0 + beta1*x0) && (beta0 + beta1*x0) <= u_mu)
+
+  c(b0 = b0, b1 = b1, Eyx5 = Eyx5,
+    cover_b1 = cover_b1, cover_mu = cover_mu)
+}
+
+# --- run B times; build tibble with explicit names ---
+sim_mat <- replicate(B, sim_one())
+res <- as_tibble(t(sim_mat), .name_repair = "minimal")
+colnames(res) <- c("b0","b1","Eyx5","cover_b1","cover_mu")
+
+# ensure logical
+res <- res |> mutate(
+  cover_b1 = as.logical(cover_b1),
+  cover_mu = as.logical(cover_mu)
+)
+
+```
+
+
+#### (a) histograms of slope & intercept
+
+```{r echo=FALSE, fig.align='center', fig.height=6, fig.width=12, message=FALSE, warning=FALSE, out.width="100%"}
+p_b0 <- ggplot(res, aes(b0)) +
+  geom_histogram(bins = 50) +
+  geom_vline(xintercept = beta0, linetype = 2) +
+  labs(title = expression(hat(beta)[0]), x = NULL, y = NULL) +
+  theme_minimal()
+
+p_b1 <- ggplot(res, aes(b1)) +
+  geom_histogram(bins = 50) +
+  geom_vline(xintercept = beta1, linetype = 2) +
+  labs(title = expression(hat(beta)[1]), x = NULL, y = NULL) +
+  theme_minimal()
+
+p_b0|p_b1
+```
+
+**DISCUSSION:**
+
+The histograms display the sampling distributions of the estimated intercept (\(\hat{\beta}_0\)) and slope (\(\hat{\beta}_1\)) from 500 simulated samples generated under the model 
+\(y = 50 + 10x + \varepsilon,\ \varepsilon \sim N(0,16)\), with \(n = 20\) observations.
+
+Both distributions appear **bell-shaped and symmetric**, indicating that the least-squares estimators follow an **approximately normal distribution** when the model errors are normally distributed. The dashed vertical lines represent the true parameter values \(\beta_0 = 50\) and \(\beta_1 = 10\).
+
+The histograms are centered around their true parameter values, confirming that the estimators are **unbiased**. The slope estimator (\(\hat{\beta}_1\)) shows a narrower spread than the intercept (\(\hat{\beta}_0\)), reflecting its smaller theoretical variance:
+\[
+\text{Var}(\hat{\beta}_1) = \frac{\sigma^2}{S_{xx}}, \quad 
+\text{Var}(\hat{\beta}_0) = \sigma^2\!\left(\frac{1}{n} + \frac{\bar{x}^2}{S_{xx}}\right).
+\]
+Overall, the near-normal shape and centering of the distributions validate the theoretical properties of the OLS estimators—unbiasedness, normality, and predictable variability.
+
+#### (b) histogram of Ehat[Y|x=5]
+
+```{r echo=FALSE, fig.align='center', fig.height=6, fig.width=12, message=FALSE, warning=FALSE, out.width="100%"}
+p_mu <- ggplot(res, aes(Eyx5)) +
+  geom_histogram(bins = 50) +
+  geom_vline(xintercept = 100, linetype = 2) +
+  labs(title = expression(hat(E)[Y~"|"~x==5]), x = NULL, y = NULL) +
+  theme_minimal()
+
+p_mu
+```
+
+**DISCUSSION:**
+
+The histogram illustrates the sampling distribution of the estimated mean response 
+\(\widehat{E}[Y|x=5]\) from 500 simulated samples. Each estimate was computed using 
+\(\widehat{E}[Y|x=5] = \hat{\beta}_0 + \hat{\beta}_1(5)\), where \(\hat{\beta}_0\) and 
+\(\hat{\beta}_1\) are the least-squares estimates from each regression.
+
+The distribution appears **approximately normal, symmetric, and centered near 100**, 
+which is the true mean value at \(x = 5\) given by \(E[Y|x=5] = 50 + 10(5) = 100\).  
+This confirms that the estimator is **unbiased**, with an expected value equal to the 
+true mean response.
+
+The histogram also shows a **narrow spread**, indicating low sampling variability — 
+as expected when \(x_0\) is close to the mean of the predictor values.  
+No skewness or extreme values are evident, reinforcing the conclusion that 
+\(\widehat{E}[Y|x=5]\) follows an approximately normal distribution under 
+the assumptions of the simple linear regression model.
+
+
+#### (c) coverage for \(\beta_1\)
+
+```{r echo=FALSE, fig.align='center', fig.height=6, fig.width=12, message=FALSE, warning=FALSE, out.width="100%"}
+mean(res$cover_b1)
+sum(res$cover_b1)
+
+
+```
+
+From the 500 simulated samples, **475** of the 95% confidence intervals contained the true slope value 
+\(\beta_1 = 10\), giving an empirical coverage proportion of **0.95**.
+
+This means that exactly **95%** of the constructed intervals captured the true slope — which matches the theoretical expectation for a 95% confidence interval. Therefore, the simulation confirms that the OLS-based confidence intervals for \(\beta_1\) are correctly calibrated and perform as expected under the normal error assumption.
+
+
+#### (d) coverage for E[Y|x=5]
+
+```{r echo=FALSE, warning=FALSE}
+mean(res$cover_mu)
+sum(res$cover_mu)
+```
+
+From the 500 simulated samples, **476** of the 95% confidence intervals for the mean response 
+\(E[Y|x=5]\) contained the true value of **100**, giving an empirical coverage proportion of **0.952**.
+
+This means that approximately **95.2%** of the constructed intervals captured the true mean response, 
+which aligns closely with the theoretical expectation of 95% coverage. 
+
+Hence, the simulation confirms that the confidence intervals for \(E[Y|x=5]\) are well-calibrated 
+and perform as expected under the normal error assumption of the simple linear regression model.
+
+
+
+
+
+

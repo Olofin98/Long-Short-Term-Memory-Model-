@@ -1,0 +1,459 @@
+---
+title: 'Stats101 R Lab 2: Quantitative Summaries and Data Visualization'
+output: html_document
+date: '2022-05-29'
+---
+
+```{r setup, include=FALSE}
+rm(list = ls()) # clear our workspace. Always start with this
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+setwd("/Users/olofindo/Documents/Statsclinic")
+```
+
+
+#Measures of Central Tendency
+##Mean
+First, download and import the dataset: https://bit.ly/Stats101Datasets  
+```{r}
+library(readr)
+library(readxl)
+
+ht <- read_xlsx("heights.xlsx")
+```
+
+When you get a new dataset, you should view the dataset and also take a look at its structure.
+```{r}
+head(ht)
+```
+
+You can limit to a few observations
+```{r}
+head(ht, n=10)
+
+head(ht, n = 10)
+
+
+tail(ht, n = 10)
+```
+
+You should also look at the variables
+```{r}
+str(ht)
+```
+
+You can also check the variable type of individual variables
+```{r}
+str(ht$Height)
+```
+
+The measures of central tendency discussed in class were the mean, median, mode
+```{r}
+mean(ht$Height)
+
+mean(ht$Height)
+
+mean(age, na.rm = T)
+
+#Here, the mean function is used to estimate the mean. The dataset is ht, and the variable is Height. The dollar sign, $, is used to select the relevant variable
+```
+
+## Median
+You can do the same for the median
+```{r}
+median(ht$Height)
+```
+## Mode
+```{r}
+mode(ht$Height)
+```
+
+R does not have an inbuilt function for mode. You have to create it by making a 'function' for it
+```{r}
+# Create the function.
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+
+bmi <- function(h,w){
+  bmi <- w/(h)^2
+  
+return(bmi)
+}
+
+
+bmi(h = 1.72, 60)
+
+getmode(ht$Height)
+```
+
+Now, you can use the function
+```{r}
+getmode(ht$Height)
+```
+
+Instead of having R output the results immediately, you can store the result in an object that you can view. This could come handy later if you need to do more estimation or manipulation based on the results
+```{r}
+results <- getmode(ht$Height)
+print(results)
+results
+```
+
+## Proportions and frequency tables
+To obtain counts only
+```{r}
+table(ht$heightgt100)
+
+height_table <- table(ht$heightgt100)
+height_table
+
+prop_table <-prop.table(height_table)
+
+prop_table
+
+100 * round(prop_table, digits = 2)
+```
+To obtain the proportions
+```{r}
+prop.table(height_table)
+```
+To obtain percentages,
+```{r}
+round(100*prop.table(height_table), digits = 0)
+```
+
+
+## Multiple quantitative summaries
+There are packages that can give us multiple summaries for >1 variable using the same line of code. A favorite is the TableOne package that is often used by researchers to quickly look at all the baseline variables in their analyses
+```{r}
+library(tableone)
+
+vars <- c("Height", "Height2")
+
+summary_height <-CreateTableOne(vars = vars, strata =, data = ht, includeNA = F)
+
+summary(summary_height)
+
+tab1 <- CreateTableOne(vars = vars, strata =, data = ht, includeNA = FALSE)
+summary(tab1)
+
+```
+
+If you already know which measures you are interested in, you could use the print function. 
+```{r}
+print(tab1, nonnormal = c(), exact =, cramVars=c(), smd = TRUE)
+
+print(summary_height)
+```
+
+If you specify a variable in the nonnormal function, you will get the median (IQR) instead of the mean (SD).
+```{r}
+print(tab1, nonnormal = c("Height2"), exact =, cramVars=c(), smd = TRUE)
+```
+
+If one of your variables is a categorical variable, you have to make sure the variable is treated as a character variable and not numeric.
+```{r}
+
+str(ht)
+ht$heightgt100_char <- as.character(ht$heightgt100)
+ht$heightgt100_char <- as.character(ht$heightgt100)
+library(tableone)
+vars <- c("heightgt100", "heightgt100_char")
+tab1 <- CreateTableOne(vars = vars, strata =, data = ht, includeNA = FALSE)
+summary(tab1)
+
+#Notice the differences in the correctly coded variable for this function and the wrongly coded one
+```
+
+You can read more about the tableone package in the R documentation for it: https://cran.r-project.org/web/packages/tableone/tableone.pdf
+
+
+# Now practice the following on your own:
+1) Download and import the resident doctors data: https://bit.ly/Stats101Datasets
+2) Estimate the mean GHQ Score, ghqscore_sum
+3) Estimate the 25th and 75th percentile job satisfaction score, jobsatisfaction_sum
+4) What is the maximum job satisfaction score?
+5) How many female resident doctors are there (Variable: female)?
+6) What is the age distribution of the resident doctors (Variable: AGEDIST)?
+7) How many female resident doctors are younger than 30 years?
+
+
+Response
+```{r}
+library(readr)
+rds <- read_csv("residentdoctors.csv")
+```
+```{r}
+head(rds)
+```
+
+```{r}
+str(rds)
+```
+
+2) Estimate the mean GHQ Score, ghqscore_sum
+```{r}
+
+names(rds)
+mean(rds$mentalhealth_score)
+```
+
+3) Estimate the 25th and 75th percentile job satisfaction score, jobsatisfaction_sum
+```{r}
+library(tableone)
+vars <- c("jobsatisfaction_score")
+tab1 <- CreateTableOne(vars = vars, strata =, data = rds, includeNA = FALSE)
+summary(tab1)
+
+max(rds$jobsatisfaction_score)
+```
+
+4) What is the maximum job satisfaction score?
+5) How many female resident doctors are there (Variable: female)?
+```{r}
+typeof(rds$female)
+str(rds)
+#A double variable is a numeric variable with at least two decimal places. Could be .00  
+```
+
+
+```{r}
+#So, we have to convert the female variable to a character variable
+rds$femalex <- as.character(rds$female)
+rds$femalex <- as.character(rds$female)
+library(tableone)
+vars <- c("femalex")
+tab1 <- CreateTableOne(vars = vars, strata =, data = rds, includeNA = FALSE)
+summary(tab1)
+```
+
+
+6) What is the age distribution of the resident doctors (Variable: AGEDIST)?
+```{r}
+typeof(rds$agecat)
+```
+
+```{r}
+#So, we have to convert the female variable to a character variable
+library(tableone)
+vars <- c("AGEDIST")
+tab1 <- CreateTableOne(vars = vars, strata =, data = rds, includeNA = FALSE)
+summary(tab1)
+```
+
+7) How many female resident doctors are younger than 30 years?
+```{r}
+#With tableone package, we can easily cross-tabulate variables using the strata command
+library(tableone)
+vars <- c("agecat")
+tab1 <- CreateTableOne(vars = vars, strata =c("femalex"), data = rds, includeNA = FALSE)
+summary(tab1)
+```
+
+
+
+# Visualizing data
+## Histograms
+We can use Base R to obtain histograms
+```{r}
+names(ht)
+
+hist(ht$Height)
+hist(ht$Height)
+```
+
+We can also use the plot function
+```{r}
+
+str(rds)
+
+plot(rds$workload_score, rds$CHILDREN)
+
+plot(x= rds$workload_score,y = rds$children)
+
+plot(x = rds$workload_score, y = rds$jobsatisfaction_score)
+```
+
+
+
+If we want to customize our graphs, a commonly used package is ggplot2, which allows us to plot most graphs by changing some aspects of the same code. Highly versatile. 
+
+It uses the following general format:
+      ggplot(data =, aes(x,y,other aesthetics))
+
+
+```{r}
+library(readxl)
+
+ht <- read_xlsx("heights.xlsx")
+
+ggplot(data = ht , aes(x = Height))+
+  geom_histogram(fill = "red", color = "black", alpha = 0.25, binwidth =0.5)+
+  labs(title = "Histogram",
+       y = "Frequency", x = "Heights of kids in clinic")+
+  theme_linedraw()
+
+
+
+
+library(ggplot2)
+p <- ggplot(ht, aes(x = Height))
+p + geom_histogram(fill="black", colour="black", alpha = 0.25, binwidth=2) + labs(y="Frequency", x="Heights of kids in clinic, cm")
+```
+
+You can ask for fewer bins by increasing the binwidth
+```{r}
+library(ggplot2)
+p <- ggplot(ht, aes(x = Height))
+p + geom_histogram(fill="black", colour="black", alpha = 0.25, binwidth=10) + labs(y="Frequency", x="Heights of kids in clinic, cm")
+```
+
+
+You can ask change the appearance of the plotting area using themes
+```{r}
+library(ggplot2)
+p <- ggplot(ht, aes(x = Height))
+p + geom_histogram(fill="black", colour="black", alpha = 0.25, binwidth=10) + labs(y="Frequency", x="Heights of kids in clinic, cm") + 
+  theme_classic()
+```
+
+```{r}
+library(ggplot2)
+p <- ggplot(ht, aes(x = Height))
+p + geom_histogram(fill="black", colour="black", alpha = 0.25, binwidth=10) + labs(y="Frequency", x="Heights of kids in clinic, cm") + 
+  theme_bw()
+```
+
+```{r}
+library(ggplot2)
+p <- ggplot(ht, aes(x = Height))
+p + geom_histogram(fill="black", colour="black", alpha = 0.25, binwidth=10) + labs(y="Frequency", x="Heights of kids in clinic, cm") + 
+  theme_dark()
+```
+
+
+
+You can add vertical lines to indicate some information on your plot
+```{r}
+library(ggplot2)
+p <- ggplot(ht, aes(x = Height))
+p + geom_histogram(fill="black", colour="black", alpha = 0.25, binwidth=2) + labs(y="Frequency", x="Heights of kids in clinic, cm") +
+  geom_vline(xintercept = 99.74, linetype = "dotted", color = "red", size=1.5)  +
+  geom_label(label="average height", x=99.74, y=12.4)
+```
+
+
+You can add a density line to your histogram
+```{r}
+library(ggplot2)
+p <- ggplot(ht, aes(x = Height))
+p + geom_histogram(fill="black", colour="black", alpha = 0.25, binwidth=2) + labs(y="Frequency", x="Heights of kids in clinic, cm") +
+  geom_vline(xintercept = 99.74, linetype = "dotted", color = "red", size=1.5) + 
+  geom_density(aes(y=2*..count..), colour="black", adjust=4)
+
+
+
+p <- ggplot(ht, aes(x = Height))
+p + geom_density(fill="black", alpha = 0.25) + 
+  labs(y="Frequency", x="Heights of kids in clinic, cm") 
+
+  
+  ggplot(ht, aes(x = Height))+
+  geom_density(fill = "black", color = "blue", alpha = 0.5)+
+    labs(title = "Density Plot")
+  
+```
+
+
+
+## Boxplots
+Boxplots are useful to identify outlierrs in data.
+```{r}
+boxplot(rds$age~rds$femalex, ylab="Age, years", xlab="All")
+```
+
+Boxplots are also great for side-by-side comparisons of the distribution
+```{r}
+boxplot(rds$AGE~rds$femalex, xlab = "Female gender", ylab="Age, years")
+
+
+ggplot(rds, aes(x = femalex, y = age))+
+  geom_boxplot()
+```
+
+
+## Scatter plots
+
+```{r}
+library(ggplot2)
+p <- ggplot(rds, aes(x = workload_score, y=mentalhealth_score)) + 
+  geom_point() + labs(y="GHQ-12 Score (worse mental health)", x="Workload Score (greater workload)")
+p
+
+```
+
+
+
+## Bar charts
+Thus far, we have shown you how to import data and use it for your analysis. Sometimes, you already have the summary data and you want to plot charts from it. Now, we will show you how to do that using bar charts.
+
+You can create a dataframe in R with summary data that you write in
+```{r}
+bardt <- data.frame(Age=c("25-29", "30-34", "35-39", "40-44", "45-49", "50-54"), Frequency=c(31, 75, 56, 18, 5, 2))
+head(bardt)
+```
+
+
+```{r}
+# load "tidyverse" plotting package
+library(ggplot2)
+# load data frame enhancement package
+library(tibble)
+
+ggplot(bardt, aes(x = Age, y = Frequency))+
+  geom_bar(stat = "identity")
+
+
+# create the base plot object
+p <- ggplot(bardt, aes(x = Age, y=Frequency)) + geom_bar(stat="identity") + labs(y="Frequency", x="Age of residents, years")
+p
+```
+
+If you want a bit more complicated:
+```{r}
+bardt <- data.frame(Age=rep(c("25-29", "30-34", "35-39", "40-44", "45-49", "50-54"), 2), Sex=rep(c("Female", "Male"), each=6), Frequency=c(18, 25, 12, 5, 2, 0, 13, 50, 44, 13, 3, 2))
+head(bardt)
+```
+
+
+```{r}
+# load "tidyverse" plotting package
+library(ggplot2)
+# load data frame enhancement package
+library(tibble)
+# create the base plot object
+ggplot(bardt, aes(x = Age, y=Frequency)) +
+  geom_bar(stat="identity", aes(fill = Sex), position = "dodge") + 
+  labs(y="Frequency", x="Age of residents, years")
+
+```
+
+
+
+## Pie charts
+```{r}
+slices <- c(31, 75, 56, 18, 5, 2)
+lbls <- c("25-29", "30-34", "35-39", "40-44", "45-49", "50-54")
+pie(slices, labels = lbls, main="Age of residents, years")
+
+
+pie(bardt$Frequency, labels = bardt$Age)
+```
+
+
+

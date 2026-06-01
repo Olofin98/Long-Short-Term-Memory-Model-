@@ -1,0 +1,91 @@
+---
+title: "MS II"
+author: "Moshood Abiola Garuba"
+date: "2025-03-19"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+geometry: margin = 0.75in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 7e:
+```{r}
+# Given parameters
+n <- 50
+p <- 1/3  # Common probability for geometric distributions
+
+# Expected values (means) of geometric distributions
+mu_X <- 1 / p
+mu_Y <- 1 / p
+mu_Z <- 1 / p
+
+# Variances of geometric distributions
+sigma2_X <- (1 - p) / p^2
+sigma2_Y <- (1 - p) / p^2
+sigma2_Z <- (1 - p) / p^2
+
+# Compute mean and variance of L
+E_L <- mu_X + mu_Y + mu_Z
+Var_L <- (sigma2_X + sigma2_Y + sigma2_Z) / n
+SD_L <- sqrt(Var_L)  # Standard deviation of L
+
+# Compute P(L ≤ 10) using normal approximation
+P_L_10 <- pnorm(10, mean = E_L, sd = SD_L)
+
+# Print the probability
+print(P_L_10)
+```
+
+
+# Question 15:
+
+## (i) Probability that the Sample Variance of Company A Exceeds 0.65 Amp
+
+```{r}
+pchisq((0.65 * 9 / 0.04), df = 9, lower.tail = FALSE)
+```
+
+## (ii) Probability that the Sample Standard Deviation of B is 2/3 Times Larger than That of A
+
+```{r}
+pf(4/9, df1 = 14, df2 = 9, lower.tail = FALSE)
+```
+## (iv) 75th Percentile of the Distribution of S^2a/S^2b
+```{r}
+qf(0.75, df1 = 9, df2 = 14)
+```
+
+
+# Question 17
+
+```{r}
+# Load necessary library
+library(stats)
+
+# Given parameters
+n <- 5   # Sample size
+m <- 3   # Binomial parameter (number of trials)
+p <- 0.34  # Probability of success
+
+# Compute the probability mass function (PMF) of X ~ Binomial(3, 0.34)
+pmf_values <- dbinom(0:m, size = m, prob = p)
+
+# Compute P(X_(3) >= 3)
+# X_(3) is the third largest value in the sample
+# We need P(X_(3) >= 3) = 1 - P(X_(3) ≤ 2)
+
+# Compute probability that at most 2 values in the sample are below 3
+threshold_prob <- sum(pmf_values[1:3])  # P(X ≤ 2) from the Binomial PMF
+prob_X3_leq_2 <- sum(dbinom(0:2, size = n, prob = threshold_prob))
+
+# Compute P(X_(3) >= 3)
+prob_X3_geq_3 <- 1 - prob_X3_leq_2
+
+# Display the result
+cat("P(X_(3) ≥ 3) =", round(prob_X3_geq_3, 4), "\n")
+
+```

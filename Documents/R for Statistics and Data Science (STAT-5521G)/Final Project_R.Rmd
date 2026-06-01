@@ -1,0 +1,273 @@
+---
+title: 'From Chaos to Clarity: Cleaning and Analyzing Dirty Restaurant Sales Data Using R'
+author: "Moshood A. Garuba"
+date: "2025-05-05"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Section 1 - Background:
+
+In the bustling world of restaurants, daily sales data is a goldmine—but only if it's clean and structured. Unfortunately, real-life data is rarely pristine. Missing values, inconsistencies, and incomplete entries are the norm rather than the exception. This project tackles one such challenge using a “dirty” restaurant sales dataset containing 17,534 transactions across starters, main dishes, desserts, drinks, and side dishes.
+
+## The Problem:
+The presence of dirt in data such as missing categories, inconsistent entries, and incomplete transaction details often makes analysis unreliable or impossible. Businesses that fail to clean and understand their data risk losing valuable insights that could improve operations, menu offerings, or customer satisfaction.
+
+## Data Strategy:
+- Data Importation
+- Data Cleaning
+- Exploratory Data Analysis
+- Statistical Modeling and Inference
+
+## Expected Outcome:
+By the end of this project, the cleaned dataset will offer a reliable foundation for future analysis and modeling. Business insights—such as what items are most often paired, what times of day generate the most revenue, or what types of sales are prone to missing info—will be clearly visualized and discussed.
+\newpage
+
+# Section 2 - Data Importation and Loading of Libraries
+```{r message=FALSE, warning=FALSE}
+# Load required libraries
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(janitor)
+library(dplyr)
+library(kableExtra)
+library(naniar)
+library(lubridate)
+library(dlookr)
+library(patchwork)
+library(gt)
+library(summarytools)
+
+# Loading your data
+mydata <- read.csv("restaurant_sales_data.csv")
+
+#checking the names of the variables
+names(mydata)
+
+#Checking the variable structure
+str(mydata)
+
+# Dimension
+dim(mydata)
+
+#Checking the first few observations
+head(mydata) %>%  kable()
+
+#Checking the last few observations
+tail(mydata) %>%  kable()
+
+```
+\newpage
+
+# Section 3/4 - Data Cleaning (Cleaning/Tidying and Transforming): 
+```{r message=FALSE, warning=FALSE}
+mydata %>%
+  gg_miss_var()+
+  labs(title = "Visaulization of the Missing variable")
+
+sum(!complete.cases(mydata) == T)
+```
+**876 observations** are missing in the dataset. We need to check the pattern of missing and develop a strategy for adjusting the missingness either by omition or imputation method using some machine learning algorithms.
+
+
+```{r message=FALSE, warning=FALSE}
+plot_na_pareto(mydata)
+```
+
+**Observations:** From the Pareto na missing chart is show that the missing is fair and we can impute and fill the missing observations using machine learning algorithms called **Predictive mean matching**.
+
+```{r message=FALSE, warning=FALSE}
+# Step 1: Perform multiple imputation
+imputed_data <- mice::mice(mydata, method = "pmm")
+
+# Step 2: Extract the completed dataset (e.g., first imputation)
+clean_data <- mice::complete(imputed_data, 1)
+
+dim(clean_data)
+
+gg_miss_var(clean_data)+
+  labs(title = "Visaulization of the Missing variable after Imputation")
+```
+
+
+**Observation:** The only data problem is missing observation which has been corrected using **Predictive mean matching techniques** embended in `mice()` function and mice package.
+\newpage
+
+# Section 5: Data Analysis (Visualizing and summarizing):
+
+## Univariate analysis:
+
+### 1. Distribution of Order Totals
+```{r message=FALSE, warning=FALSE}
+ggplot(clean_data, aes(x = Order.Total)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Order Totals", x = "Order Total", y = "Count") +
+  theme_minimal()
+```
+
+### 2. Frequency of Payment Methods
+
+```{r message=FALSE, warning=FALSE}
+ggplot(clean_data, aes(x = Payment.Method)) +
+  geom_bar(fill = "darkcyan") +
+  labs(title = "Frequency of Payment Methods", x = "Payment Method", y = "Count") +
+  theme_minimal()
+```
+
+
+### 3. Frequency of Item Categories
+
+```{r message=FALSE, warning=FALSE}
+ggplot(clean_data, aes(x = reorder(Category, Category, function(x)-length(x)))) +
+  geom_bar(fill = "orange") +
+  labs(title = "Item Category Frequency", x = "Category", y = "Count") +
+  theme_minimal() +
+  coord_flip()
+```
+
+
+
+## Bivariate Analysis
+
+### 1. Average Order Total by Payment Method
+
+```{r message=FALSE, warning=FALSE}
+clean_data %>%
+  group_by(Payment.Method) %>%
+  summarise(Avg.Order.Total = mean(Order.Total, na.rm = TRUE)) %>%
+  ggplot(aes(x = reorder(Payment.Method, Avg.Order.Total), y = Avg.Order.Total)) +
+  geom_col(fill = "forestgreen") +
+  labs(title = "Average Order Total by Payment Method", x = "Payment Method", y = "Average Total") +
+  theme_minimal()
+```
+
+
+
+### 2. Boxplot of Price by Category
+
+```{r message=FALSE, warning=FALSE}
+ggplot(clean_data, aes(x = Category, y = Price)) +
+  geom_boxplot(fill = "plum") +
+  labs(title = "Price by Category", x = "Category", y = "Price") +
+  theme_minimal() +
+  coord_flip()
+
+```
+
+
+### 3. Relationship between Quantity and Order Total
+
+```{r message=FALSE, warning=FALSE}
+ggplot(clean_data, aes(x = Quantity, y = Order.Total)) +
+  geom_point(alpha = 0.4, color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Quantity vs Order Total", x = "Quantity", y = "Order Total") +
+  theme_minimal()
+```
+
+
+### 4. Total Revenue by Category
+
+```{r message=FALSE, warning=FALSE}
+clean_data %>%
+  group_by(Category) %>%
+  summarise(Total.Revenue = sum(Order.Total, na.rm = TRUE)) %>%
+  ggplot(aes(x = reorder(Category, Total.Revenue), y = Total.Revenue)) +
+  geom_col(fill = "darkorange") +
+  labs(title = "Total Revenue by Category", x = "Category", y = "Revenue") +
+  theme_minimal() +
+  coord_flip()
+```
+
+
+# Statistical Modeling and Inference
+
+```{r message=FALSE, warning=FALSE}
+clean_data %>% 
+  ggplot(aes(x = Price, y = Order.Total))+
+  geom_point(aes(colour = Payment.Method))+
+  labs(title = "Correlational Plot", y = "Total Order")+
+  theme_minimal()
+```
+
+```{r message=FALSE, warning=FALSE}
+model<-lm(Order.Total~Price, data = clean_data)
+
+summary(model)
+```
+
+A linear regression model was fitted using ordinary least squares (OLS) to predict `Order.Total` based on `Price`. The model revealed a statistically significant and substantial relationship, explaining 62% of the variance in order totals (**R² = 0.62**, *F*(1, 17,532) = 28,132.81, *p* < .001). The intercept of the model was -0.23 (95% CI [-0.52, 0.07]), which was not statistically significant (*t* = -1.52, *p* = 0.128), indicating no meaningful prediction when price is zero. However, the effect of `Price` was highly significant and positive (**β = 3.05**, 95% CI [3.01, 3.08], *t* = 167.73, *p* < .001), with a standardized beta of **0.78** (95% CI [0.78, 0.79]), suggesting that higher prices are strongly associated with higher order totals. Overall, the model demonstrates that price is a strong and reliable predictor of total sales.
+
+# Shinny App
+I developed a simple interactive dashboard to monitor restaurant order data, showcasing key metrics such as total sales, number of orders, and average order value. Incorporated visual summaries using sales trends over time, providing actionable insights for operations and decision-making.
+
+
+```{r message=FALSE, warning=FALSE}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+
+# UI
+ui <- fluidPage(
+  titlePanel("Simple Order Dashboard"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("category", "Category:",
+                  choices = c("All", unique(clean_data$Category))),
+      selectInput("payment", "Payment Method:",
+                  choices = c("All", unique(clean_data$`Payment.Method`)))
+    ),
+    
+    mainPanel(
+      tableOutput("dataTable"),
+      plotOutput("salesPlot")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  
+  filteredData <- reactive({
+    data <- clean_data
+    data$Order.Date <- as.Date(data$Order.Date)
+    
+    if (input$category != "All") {
+      data <- data[data$Category == input$category, ]
+    }
+    if (input$payment != "All") {
+      data <- data[data$`Payment.Method` == input$payment, ]
+    }
+    
+    data
+  })
+  
+  output$dataTable <- renderTable({
+    head(filteredData(), 20)  # Show only first 20 rows for simplicity
+  })
+  
+  output$salesPlot <- renderPlot({
+    df <- filteredData() %>%
+      group_by(Order.Date) %>%
+      summarise(Total = sum(Order.Total, na.rm = TRUE))
+    
+    ggplot(df, aes(x = Order.Date, y = Total)) +
+      geom_line(color = "blue") +
+      labs(title = "Total Sales Over Time", x = "Date", y = "Sales ($)")
+  })
+}
+
+# Run the app
+shinyApp(ui = ui, server = server)
+
+```
+

@@ -1,0 +1,191 @@
+---
+title: "Homework 10"
+author: "Moshood A Garuba"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1:
+In Folio and Posit Cloud is a file “HW 10 supplement.pdf”. It defines a data frame and then displays six tables that highlight various aspects of the data. I want you to recreate each of the six tables, displaying your code, using the tools learned in this lecture. You should not do any manual calculations or editing of individual table elements yourself. The data wrangling functions I used in my solution are mutate(), filter(), group_by(), summarize(), add_column(), add_row(), and pivot_wider(). Undergrad students do not have to make the last table.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(kableExtra)
+
+Batter <- c("Derek Jeter", "Derek Jeter", "David Justice", "David Justice")
+Year <- c(1995, 1996, 1995, 1996)
+Hits <- c(12, 183, 104, 45)
+Attempts <- c(48, 582, 411, 140)
+batter_df <- data.frame(Batter, Year, Hits, Attempts) |>
+arrange(Batter)
+kable(batter_df)
+```
+
+Calculate their batting averages each year.
+```{r message=FALSE, warning=FALSE}
+batt_ave <- batter_df %>% 
+  mutate(`Batting Average` = round(Hits/Attempts,3)) 
+kable(batt_ave)
+```
+
+First do a comparison in the year 1995.
+```{r message=FALSE, warning=FALSE}
+batt_ave %>% 
+  filter(Year == 1995) %>% 
+  kable()
+```
+
+In 1995, David Justice has a slightly higher batting average. Now look at 1996.
+```{r message=FALSE, warning=FALSE}
+batt_ave %>% 
+  filter(Year == 1996) %>% 
+  kable()
+```
+
+In 1996, David Justice has a slightly higher batting average. Now combine their attempts over the two years
+```{r message=FALSE, warning=FALSE}
+batt_ave %>% 
+  group_by(Batter) %>% 
+  summarise(Hits = sum(Hits),
+            Attempts = sum(Attempts)) %>% 
+    kable()
+```
+
+Calculate and compare their batting averaged combined over the two year period.
+```{r message=FALSE, warning=FALSE}
+batt_ave %>% 
+  group_by(Batter) %>% 
+  summarise(Hits = sum(Hits),
+            Attempts = sum(Attempts)) %>% 
+  mutate(`Batting Average` = round(Hits/Attempts,3)) %>%   
+  kable()
+```
+
+Over the two year period, Derek Jeter has a higher batting average. Here is a table to summarize their performance each year and overall.
+```{r message=FALSE, warning=FALSE}
+Yr_sum<- batt_ave %>% 
+  select(Batter, Year, `Batting Average`) %>% 
+  pivot_wider(names_from = Year, values_from = `Batting Average` ) 
+  
+Overall<- batter_df %>%
+  group_by(Batter) %>%
+  summarise(Hits = sum(Hits), Attempts = sum(Attempts)) %>%
+  mutate(Overall = round(Hits / Attempts,2)) %>%
+  select(Batter, Overall)
+
+Yr_sum %>% 
+  left_join(Overall, by = "Batter") %>% 
+  kable()
+```
+
+# Question 2
+The joining example from the lecture used two data sets where the rows were the same type of unit (in this case, students). In this problem you’ll consider joining two datasets on the same topic, but containing observations on different types of units.
+
+```{r message=FALSE, warning=FALSE}
+superheroes <-"
+name, alignment, gender, publisher
+Magneto, bad, male, Marvel
+Storm, good, female, Marvel
+Mystique, bad, female, Marvel
+Batman, good, male, DC
+Joker, bad, male, DC
+Catwoman, bad, female, DC
+Hellboy, good, male, Dark Horse Comics
+"
+superheroes <- read_csv(superheroes, trim_ws = TRUE, skip = 1)
+publishers <- "
+publisher, yr_founded
+DC, 1934
+Marvel, 1939
+Image, 1992
+"
+publishers <- read_csv(publishers, trim_ws = TRUE, skip = 1)
+```
+
+
+## a) In the superheroes data frame, what units do the rows refer to? What about in the publishers data frame?
+
+- superheroes: Each row = a superhero
+
+- publishers: Each row = a publisher
+
+## b) What key will automatically be used if the data frames are joined (and a key is not specified manually)?
+
+"publisher" as the join key.
+
+## c) Perform a left_join() with superheroes on the left and publishers on the right. Explain any missing values or non-included observations.
+
+```{r message=FALSE, warning=FALSE}
+superheroes_joined <- left_join(superheroes, publishers)
+superheroes_joined %>% kable()
+```
+**Explanation of Missing Values or Non-Included Observations** The `left_join()` retains all rows from the `superheroes` data frame and adds the corresponding `yr_founded` value from the `publishers` data frame, matching by the `publisher` column. Since Hellboy's publisher is "Dark Horse Comics"—which doesn't exist in the `publishers` data frame—his `yr_founded` value will be `NA`. Meanwhile, the "Image" publisher (founded in 1992) isn't included in the result because no superhero in the `superheroes` data frame is associated with it.
+
+## d) Perform a right_join() with superheroes on the left and publishers on the right. Explain any missing values or non-included observations.
+```{r}
+superheroes_right <- right_join(superheroes, publishers)
+superheroes_right %>% kable()
+```
+**Explanation of Missing Values or Non-Included Observations:** The `right_join()` retains all rows from the `publishers` data frame and appends matching details from the `superheroes` data frame wherever the `publisher` values align. Since "Image" exists in the `publishers` data but not in the `superheroes` data, it will appear in the result with `NA` for the `name`, `alignment`, and `gender` fields. On the other hand, Hellboy will be excluded because his publisher, "Dark Horse Comics", isn’t listed in the `publishers` table. This type of join guarantees that all listed publishers are represented, even if no superhero is associated with them.
+
+## e) Perform a full_join() with superheroes on the left and publishers on the right. Explain any missing values or non-included observations.
+```{r}
+superheroes_full <- full_join(superheroes, publishers)
+superheroes_full %>% kable()
+```
+**Explanation of Missing Values or Non-Included Observations:** The full_join() combines all rows from both the superheroes and publishers data frames, matching them based on the publisher column. It includes:
+
+All superheroes, even if their publisher doesn't exist in the publishers data frame.
+
+All publishers, even if no superhero is associated with them.
+
+Missing Values:
+Hellboy appears in the result because he’s in the superheroes table, but his publisher (Dark Horse Comics) doesn’t exist in the publishers table. As a result, his yr_founded value is NA.
+
+The Image publisher appears in the result because it's in the publishers table, but no superhero is linked to it in the superheroes table. So, its corresponding name, alignment, and gender fields are NA.
+
+## f) Perform an inner_join() with superheroes on the left and publishers on the right. Explain any missing values or non-included observations.
+```{r message=FALSE, warning=FALSE}
+superheroes_inner <- inner_join(superheroes, publishers)
+superheroes_inner %>% kable()
+```
+
+**Explanation of Missing Values or Non-Included Observations:** The inner_join() includes only the rows where there is a matching value in the publisher column in both the superheroes and publishers data frames. As a result, there are no missing values in the output, because all the included rows have complete information from both tables. However, any rows with publisher values that don’t match between the two data frames are excluded from the result.  So, while there are no NA values in the joined table, some observations from both tables are not included at all due to the lack of a matching key.
+
+
+## g) Perform a semi_join() with superheroes on the left and publishers on the right. Explain any missing values or non-included observations
+```{r message=FALSE, warning=FALSE}
+superheroes_semi <- semi_join(superheroes, publishers)
+superheroes_semi %>% kable()
+```
+
+h) Perform a semi_join() with publishers on the left and superheroes on the right. Explain any missing values or non-included observations.
+```{r message=FALSE, warning=FALSE}
+publishers_semi <- semi_join(publishers, superheroes)
+publishers_semi %>% kable()
+```
+
+## i) Perform an anti_join() with superheroes on the left and publishers on the right. Explain the result.
+```{r}
+anti_join(superheroes, publishers, by = c("publisher" = "publisher")) %>% kable()
+```
+
+## j) Perform an anti_join() with publishers on the left and superheroes on the right. Explain the result.
+```{r message=FALSE, warning=FALSE}
+anti_join(publishers, superheroes, by = c("publisher" = "publisher")) %>% kable()
+```
+
+# Question 3: 
+
+```{r message=FALSE, warning=FALSE}
+iris |>
+group_by(Species) |>
+summarize(`Average Petal Length` = mean(`Petal.Length`, na.rm = TRUE)) |>
+kable()
+```
+

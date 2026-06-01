@@ -1,0 +1,621 @@
+---
+title: "Mechanistic Modeling"
+author: "Olofin Daniel"
+date: "2025-07-08"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ # Mechanistic Modeling - Approach 1:
+
+## Theoretical Framework
+
+Mechanistic modeling provides a framework to simulate chromosomal instability (CIN) based on biological assumptions. Instead of testing statistical hypotheses, we aim to replicate the **stochastic behavior** of cells exposed to different treatments using **probabilistic transition rules**.
+
+In this model, each **chromosome** in a **single cell clone** can either remain the same, gain a copy, or lose a copy at each time step. These changes depend on the treatment condition, reflecting biological stress-induced instability (e.g., oxidative stress, nutrient deprivation, mitotic spindle disruptions).
+
+### Probabilistic Transition Rules
+Each chromosome in each cell may either:
+- Gain a copy (+1),
+- Lose a copy (−1), or
+- Remain unchanged (0),
+at each time step.
+
+Let:
+- \( C_{i,t} \): copy number of chromosome \( i \) in a given cell at time \( t \),
+- \( P^T_g \): probability of chromosome gain under treatment \( T \),
+- \( P^T_l \): probability of chromosome loss under treatment \( T \).
+
+**Transition Probabilities:**
+\[
+C_{i,t+1} = \begin{cases} 
+C_{i,t} + 1 & \text{with probability } P^T_g \\
+C_{i,t} - 1 & \text{with probability } P^T_l \text{ (if } C_{i,t} > 0) \\
+C_{i,t}     & \text{with probability } 1 - P^T_g - P^T_l
+\end{cases}
+\]
+
+
+The probabilities are treatment-specific:
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(reshape2)
+library(pheatmap)
+
+# Define simulation parameters
+set.seed(123)
+
+n_cells <- 1000
+n_chromosomes <- 22
+n_time <- 5
+
+# Define treatments and transition probabilities
+treatments <- c("Control", "Glucose", "Phosphate", 
+                "Reversine_Control", "Reversine_Glucose", 
+                "RPMI", "K_Condition", "Oxygen", "R_Condition")
+
+transition_probs <- list(
+  Control = list(gain = 0.01, loss = 0.01),
+  Glucose = list(gain = 0.10, loss = 0.02),
+  Phosphate = list(gain = 0.06, loss = 0.04),
+  Reversine_Control = list(gain = 0.08, loss = 0.06),
+  Reversine_Glucose = list(gain = 0.15, loss = 0.12),
+  RPMI = list(gain = 0.05, loss = 0.03),
+  K_Condition = list(gain = 0.07, loss = 0.02),
+  Oxygen = list(gain = 0.03, loss = 0.01),
+  R_Condition = list(gain = 0.11, loss = 0.05)
+)
+
+chromosomes <- paste0("V", 1:n_chromosomes)
+
+# Simulation function
+simulate_karyotypes <- function(treatment, n_cells, n_chromosomes, n_time) {
+  gain_p <- transition_probs[[treatment]]$gain
+  loss_p <- transition_probs[[treatment]]$loss
+  
+  mat <- matrix(2, nrow = n_cells, ncol = n_chromosomes)
+  colnames(mat) <- chromosomes
+  
+  for (t in 1:n_time) {
+    for (i in 1:n_cells) {
+      for (j in 1:n_chromosomes) {
+        r <- runif(1)
+        if (r < gain_p) {
+          mat[i, j] <- mat[i, j] + 1
+        } else if (r < gain_p + loss_p && mat[i, j] > 0) {
+          mat[i, j] <- mat[i, j] - 1
+        }
+      }
+    }
+  }
+  
+  df <- as.data.frame(mat)
+  df$treatment <- treatment
+  df$cell_id <- 1:nrow(df)
+  return(df)
+}
+
+# Run simulation for all treatments
+simulated_data <- map_dfr(treatments, ~simulate_karyotypes(.x, n_cells, n_chromosomes, n_time))
+
+# Summarize and plot heatmap
+mean_profiles <- simulated_data %>%
+  pivot_longer(cols = all_of(chromosomes), names_to = "chromosome", values_to = "count") %>%
+  group_by(treatment, chromosome) %>%
+  summarise(mean_count = mean(count), .groups = "drop") %>%
+  pivot_wider(names_from = chromosome, values_from = mean_count)
+
+heat_matrix <- as.matrix(mean_profiles[,-1])
+rownames(heat_matrix) <- mean_profiles$treatment
+
+# Visualize
+pheatmap(heat_matrix, cluster_rows = TRUE, cluster_cols = TRUE,
+         main = "Avg Chromosome Count per Treatment",
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+
+```
+
+
+# Appoarch 2:
+
+## Theoretical Framework
+
+We model karyotype evolution as a discrete-time Markov process.
+Each chromosome copy number evolves independently in each cell according to gain/loss probabilities.
+
+\[
+P(C_{i,t+1} = c' | C_{i,t} = c) =
+\begin{cases}
+P_g^T & c' = c + 1\\
+P_l^T & c' = \max(0, c - 1)\\
+1 - P_g^T - P_l^T & c' = c
+\end{cases}
+\]
+
+Where:
+- \( P_g^T \) is the probability of gain under treatment \( T \)
+- \( P_l^T \) is the probability of loss under treatment \( T \)
+
+### Transition matrix for a single chromosome (states 0 to 5 for illustration)
+
+\[
+\mathbf{P}^T =
+\begin{bmatrix}
+1 - P_g^T & P_g^T & 0 & 0 & 0 & 0 \\
+P_l^T & 1 - P_g^T - P_l^T & P_g^T & 0 & 0 & 0 \\
+0 & P_l^T & 1 - P_g^T - P_l^T & P_g^T & 0 & 0 \\
+0 & 0 & P_l^T & 1 - P_g^T - P_l^T & P_g^T & 0 \\
+0 & 0 & 0 & P_l^T & 1 - P_g^T - P_l^T & P_g^T \\
+0 & 0 & 0 & 0 & P_l^T & 1 - P_l^T
+\end{bmatrix}
+\]
+
+### Joint transition
+
+\[
+P(\mathbf{C}_{t+1} | \mathbf{C}_t) = \prod_{i=1}^{22} P(C_{i,t+1} | C_{i,t})
+\]
+
+# Simulation Data Structure
+
+| clone_id  | replicate_id | line | treatment | X1 | X2 | ... | X22 |
+|-----------|--------------|-------|------------|----|----|------|------|
+| CLONE_1 | SNU-668_G1_A10_seed | SNU-668 | Glucose | 2 | 3 | ... | 1 |
+| CLONE_2 | SNU-668_G1_A10_seed | SNU-668 | Glucose | 1 | 2 | ... | 2 |
+| ... | ... | ... | ... | ... | ... | ... | ... |
+| CLONE_1000 | SNU-668_G1_A10_seed | SNU-668 | Glucose | 2 | 2 | ... | 3 |
+
+This structure enables both single-cell and replicate-level analysis.
+
+# Flowchart
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(vegan)
+library(ggplot2)
+library(DiagrammeR)
+
+# Define treatments and their gain/loss probabilities (can be tuned)
+treatment_params <- data.frame(
+  treatment = c("Control", "Glucose", "Phosphate", "Reversine_Control", 
+                "Reversine_Glucose", "RPMI", "K_Condition", "Oxygen", "R_Condition"),
+  P_gain = c(0.02, 0.03, 0.03, 0.05, 0.06, 0.02, 0.04, 0.03, 0.04),
+  P_loss = c(0.015, 0.02, 0.02, 0.04, 0.05, 0.015, 0.03, 0.02, 0.03)
+)
+
+cell_lines <- c("HGC-27", "MDAMB231", "SNU-668", "SUM-159", "SUM-159-4N")
+
+# Example replicate IDs (subset for demo)
+replicate_id <- paste0(rep(cell_lines, each=2), "_Rep", 1:2)
+
+# Simulate karyotypes
+generate_karyotypes <- function(n_cells, n_chrom = 22, time_steps = 10, P_gain, P_loss) {
+  karyo_list <- vector("list", n_cells)
+  for (cell in 1:n_cells) {
+    karyo <- rep(2, n_chrom)
+    for (t in 1:time_steps) {
+      change <- sample(c(+1, -1, 0), n_chrom, replace=TRUE,
+                       prob=c(P_gain, P_loss, 1 - P_gain - P_loss))
+      karyo <- pmax(0, karyo + change) # no negative copy numbers
+    }
+    karyo_list[[cell]] <- karyo
+  }
+  do.call(rbind, karyo_list)
+}
+
+set.seed(123)
+sim_data <- list()
+clone_counter <- 1
+for (rep in replicate_id) {
+  line <- strsplit(rep, "_")[[1]][1]
+  treatment <- sample(treatment_params$treatment, 1)
+  P_g <- treatment_params$P_gain[treatment_params$treatment == treatment]
+  P_l <- treatment_params$P_loss[treatment_params$treatment == treatment]
+  karyos <- generate_karyotypes(n_cells = 1000, P_gain = P_g, P_loss = P_l)
+  sim_data[[rep]] <- data.frame(
+    clone_id = paste0("CLONE_", clone_counter:(clone_counter + 999)),
+    replicate_id = rep,
+    line = line,
+    treatment = treatment,
+    karyos
+  )
+  clone_counter <- clone_counter + 1000
+}
+sim_df <- bind_rows(sim_data)
+
+# Aggregate to replicate centroids
+karyo_df <- sim_df %>%
+  group_by(replicate_id, treatment, line) %>%
+  summarise(across(starts_with("X"), mean), .groups = "drop")
+
+# Create matrix of karyotype values
+karyo_mat <- as.matrix(karyo_df[, grep("^X", names(karyo_df))])
+rownames(karyo_mat) <- karyo_df$replicate_id
+
+# Create metadata
+meta_flask <- karyo_df[, c("replicate_id", "line", "treatment")]
+rownames(meta_flask) <- karyo_df$replicate_id
+
+# Compute distance matrix
+dist_flask <- dist(karyo_mat)
+
+# Check alignment
+stopifnot(all(rownames(meta_flask) == attr(dist_flask, "Labels")))
+
+
+# --- Flowchart ---
+grViz(" 
+digraph karyo_model {
+  graph [rankdir = TB]
+  node [shape = rectangle, style = filled, fillcolor = lightblue]
+  Start [label = 'Start: Diploid karyotype']
+  TimeStep [label = 'For each time step']
+  ChromLoop [label = 'For each chromosome']
+  GainLoss [label = 'Apply gain/loss probabilities']
+  Update [label = 'Update karyotype (no negatives)']
+  Output [label = 'Record final karyotype']
+  
+  Start -> TimeStep -> ChromLoop -> GainLoss -> Update -> TimeStep
+  TimeStep -> Output
+}")
+
+# Visualization (optional)
+karyo_long <- sim_df %>% pivot_longer(cols = starts_with("X"), names_to = "chrom", values_to = "copy")
+ggplot(karyo_long, aes(copy)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~treatment) +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number Distributions")
+
+```
+
+
+```{r}
+# Treatment probabilities as per your reference
+treatment_params <- data.frame(
+  treatment = c("Control", "Glucose", "Phosphate", "Reversine_Control", 
+                "Reversine_Glucose", "RPMI", "K_Condition", "Oxygen", "R_Condition"),
+  P_gain = c(0.02, 0.03, 0.03, 0.05, 0.06, 0.02, 0.04, 0.03, 0.04),
+  P_loss = c(0.015, 0.02, 0.02, 0.04, 0.05, 0.015, 0.03, 0.02, 0.03)
+)
+
+# Function to create matrix for one treatment
+create_transition_matrix <- function(P_gain, P_loss) {
+  P_same <- 1 - P_gain - P_loss
+  mat <- matrix(0, nrow = 4, ncol = 4)  # For 0,1,2,3 copy numbers
+  
+  mat[1,1] <- P_same + P_loss
+  mat[1,2] <- P_gain
+  
+  mat[2,1] <- P_loss
+  mat[2,2] <- P_same
+  mat[2,3] <- P_gain
+  
+  mat[3,2] <- P_loss
+  mat[3,3] <- P_same
+  mat[3,4] <- P_gain
+  
+  mat[4,3] <- P_loss
+  mat[4,4] <- P_same + P_gain
+  
+  return(mat)
+}
+
+# Apply to all treatments
+transition_matrices <- lapply(1:nrow(treatment_params), function(i) {
+  row <- treatment_params[i, ]
+  mat <- create_transition_matrix(row$P_gain, row$P_loss)
+  list(treatment = row$treatment, matrix = mat)
+})
+
+# Display nicely
+for (item in transition_matrices) {
+  cat("\n--- Transition Matrix for", item$treatment, "---\n")
+  print(round(item$matrix, 3))
+}
+
+```
+
+
+
+```{r}
+# Compute average copy number per treatment and chromosome
+heat_matrix <- sim_df %>%
+  pivot_longer(cols = starts_with("X"), names_to = "chrom", values_to = "copy") %>%
+  group_by(treatment, chrom) %>%
+  summarise(mean_copy = mean(copy), .groups = 'drop') %>%
+  pivot_wider(names_from = chrom, values_from = mean_copy) %>%
+  column_to_rownames("treatment") %>%
+  as.matrix()
+
+# Plot heatmap
+pheatmap(heat_matrix, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE,
+         main = "Avg Chromosome Count per Treatment",
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+**Note: I tried to run the PERMANOVA using the appoarch two data, the result seems different from the actaul anaylsis but supported the first result I got when Collapsing the cell-level karyotypes into flask-level centroids:**
+
+```{r}
+# Run PERMANOVA
+library(vegan)
+adonis2(
+  formula = dist_flask ~ line + treatment,
+  data = meta_flask,
+  strata = meta_flask$line,
+  permutations = 999
+)
+
+```
+A PERMANOVA was conducted to assess whether differences in karyotype profiles among individual cells were significantly associated with cell line and treatment conditions, while accounting for stratified permutation within each cell line. The overall model was not significant ($F$ = 3.39, $p$ = 1.000), despite explaining approximately 96.4% of the total variation in the chromosome features ($R^2$ = 0.964).
+
+
+
+
+
+
+**Equal Probability**
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(vegan)
+library(ggplot2)
+library(DiagrammeR)
+
+# Define treatments and their gain/loss probabilities (can be tuned)
+treatment_params <- data.frame(
+  treatment = c("Control", "Glucose", "Phosphate", "Reversine_Control", 
+                "Reversine_Glucose", "RPMI", "K_Condition", "Oxygen", "R_Condition"),
+  P_gain = 0.02,
+  P_loss = 0.02
+)
+
+cell_lines <- c("HGC-27", "MDAMB231", "SNU-668", "SUM-159", "SUM-159-4N")
+
+# Example replicate IDs (subset for demo)
+replicate_id <- paste0(rep(cell_lines, each=2), "_Rep", 1:2)
+
+# Simulate karyotypes
+generate_karyotypes <- function(n_cells, n_chrom = 22, time_steps = 10, P_gain, P_loss) {
+  karyo_list <- vector("list", n_cells)
+  for (cell in 1:n_cells) {
+    karyo <- rep(2, n_chrom)
+    for (t in 1:time_steps) {
+      change <- sample(c(+1, -1, 0), n_chrom, replace=TRUE,
+                       prob=c(P_gain, P_loss, 1 - P_gain - P_loss))
+      karyo <- pmax(0, karyo + change) # no negative copy numbers
+    }
+    karyo_list[[cell]] <- karyo
+  }
+  do.call(rbind, karyo_list)
+}
+
+set.seed(123)
+sim_data <- list()
+clone_counter <- 1
+for (rep in replicate_id) {
+  line <- strsplit(rep, "_")[[1]][1]
+  treatment <- sample(treatment_params$treatment, 1)
+  P_g <- treatment_params$P_gain[treatment_params$treatment == treatment]
+  P_l <- treatment_params$P_loss[treatment_params$treatment == treatment]
+  karyos <- generate_karyotypes(n_cells = 1000, P_gain = P_g, P_loss = P_l)
+  sim_data[[rep]] <- data.frame(
+    clone_id = paste0("CLONE_", clone_counter:(clone_counter + 999)),
+    replicate_id = rep,
+    line = line,
+    treatment = treatment,
+    karyos
+  )
+  clone_counter <- clone_counter + 1000
+}
+sim_df <- bind_rows(sim_data)
+
+# Aggregate to replicate centroids
+karyo_df <- sim_df %>%
+  group_by(replicate_id, treatment, line) %>%
+  summarise(across(starts_with("X"), mean), .groups = "drop")
+
+# Create matrix of karyotype values
+karyo_mat <- as.matrix(karyo_df[, grep("^X", names(karyo_df))])
+rownames(karyo_mat) <- karyo_df$replicate_id
+
+# Create metadata
+meta_flask <- karyo_df[, c("replicate_id", "line", "treatment")]
+rownames(meta_flask) <- karyo_df$replicate_id
+
+# Compute distance matrix
+dist_flask <- dist(karyo_mat)
+
+# Check alignment
+stopifnot(all(rownames(meta_flask) == attr(dist_flask, "Labels")))
+
+
+# --- Flowchart ---
+grViz(" 
+digraph karyo_model {
+  graph [rankdir = TB]
+  node [shape = rectangle, style = filled, fillcolor = lightblue]
+  Start [label = 'Start: Diploid karyotype']
+  TimeStep [label = 'For each time step']
+  ChromLoop [label = 'For each chromosome']
+  GainLoss [label = 'Apply gain/loss probabilities']
+  Update [label = 'Update karyotype (no negatives)']
+  Output [label = 'Record final karyotype']
+  
+  Start -> TimeStep -> ChromLoop -> GainLoss -> Update -> TimeStep
+  TimeStep -> Output
+}")
+
+# Visualization (optional)
+karyo_long <- sim_df %>% pivot_longer(cols = starts_with("X"), names_to = "chrom", values_to = "copy")
+ggplot(karyo_long, aes(copy)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~treatment) +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number Distributions")
+# Compute average copy number per treatment and chromosome
+heat_matrix <- sim_df %>%
+  pivot_longer(cols = starts_with("X"), names_to = "chrom", values_to = "copy") %>%
+  group_by(treatment, chrom) %>%
+  summarise(mean_copy = mean(copy), .groups = 'drop') %>%
+  pivot_wider(names_from = chrom, values_from = mean_copy) %>%
+  column_to_rownames("treatment") %>%
+  as.matrix()
+
+# Plot heatmap
+pheatmap(heat_matrix, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE,
+         main = "Avg Chromosome Count per Treatment",
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+
+```
+
+# Theoretical Framework
+
+## Objective
+
+This simulation models the chromosomal instability (CIN) in cancer cells by simulating the copy number evolution of chromosomes across time under different treatments and cell lines. The aim is to generate realistic karyotype variability expected in tumors without pre-specified hypotheses about treatment effects.
+
+## Assumptions
+
+- The initial copy number of each chromosome is randomly drawn from a uniform distribution between 1 and 5, reflecting the inherent aneuploidy of cancer cells:
+\[
+C_{i,0} \sim \text{Uniform}(1, 5)
+\]
+
+- Chromosomal changes occur at discrete time steps. At each time step, each chromosome may:
+  - **Gain a copy**: \(C_{i,t+1} = C_{i,t} + 1\)
+  - **Lose a copy** (if \(C_{i,t} > 0\)): \(C_{i,t+1} = C_{i,t} - 1\)
+  - **Remain unchanged**: \(C_{i,t+1} = C_{i,t}\)
+
+- Probabilities of gain and loss are equal across all treatments:
+\[
+P_{\text{gain}} = P_{\text{loss}} = p
+\]
+where \(p = 0.05\).
+
+- The probability of no change is:
+\[
+P_{\text{no change}} = 1 - 2p
+\]
+
+## Transition Probability Matrix
+
+At each time step for each chromosome:
+\[
+P(C_{i,t+1}|C_{i,t}) =
+\begin{bmatrix}
+P_{\text{gain}} & P_{\text{loss}} & P_{\text{no change}}
+\end{bmatrix}
+=
+\begin{bmatrix}
+0.05 & 0.05 & 0.90
+\end{bmatrix}
+\]
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Setup
+set.seed(123)
+n_cells <- 1000
+n_chrom <- 22
+n_steps <- 10
+p_gain <- 0.05
+p_loss <- 0.05
+
+treatments <- c("Control", "Glucose", "Phosphate", "Reversine_Control", 
+                "Reversine_Glucose", "RPMI", "K_Condition", "Oxygen", "R_Condition")
+
+cell_lines <- c("HGC-27", "MDAMB231", "SNU-668", "SUM-159", "SUM-159-4N")
+
+chromosomes <- paste0("V", 1:n_chrom)
+
+# Function
+simulate_cancer_karyotypes <- function(n_cells, n_chrom, n_steps, p_gain, p_loss, treatment, line) {
+  karyo_list <- vector("list", n_cells)
+  for (cell in 1:n_cells) {
+    karyo <- sample(1:5, n_chrom, replace = TRUE)
+    names(karyo) <- chromosomes
+    
+    for (t in 1:n_steps) {
+      change <- sapply(karyo, function(count) {
+        move <- sample(c(1, -1, 0), 1,
+                       prob = c(p_gain, ifelse(count > 0, p_loss, 0), 
+                                1 - p_gain - ifelse(count > 0, p_loss, 0)))
+        return(move)
+      })
+      karyo <- pmax(0, karyo + change)
+    }
+    karyo_list[[cell]] <- data.frame(t(karyo), cell_id = paste0("Cell_", cell),
+                                     treatment = treatment, line = line)
+  }
+  return(bind_rows(karyo_list))
+}
+
+# Simulate for all cell lines and treatments
+sim_results <- list()
+counter <- 1
+for (line in cell_lines) {
+  for (treat in treatments) {
+    sim_results[[counter]] <- simulate_cancer_karyotypes(n_cells = 100, # adjust as needed
+                                                         n_chrom = n_chrom,
+                                                         n_steps = n_steps,
+                                                         p_gain = p_gain,
+                                                         p_loss = p_loss,
+                                                         treatment = treat,
+                                                         line = line)
+    counter <- counter + 1
+  }
+}
+
+sim_df <- bind_rows(sim_results)
+
+# View part of the result
+head(sim_df)
+
+
+# Long format for histogram
+karyo_long <- sim_df %>% 
+  pivot_longer(cols = starts_with("X"), names_to = "chrom", values_to = "copy")
+
+# Histogram
+ggplot(karyo_long, aes(copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  facet_wrap(~treatment) +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number Distributions")
+
+# Compute mean copy number per treatment × chromosome
+heat_data <- karyo_long %>%
+  group_by(treatment, chrom) %>%
+  summarise(mean_copy = mean(copy), .groups = 'drop') %>%
+  pivot_wider(names_from = chrom, values_from = mean_copy)
+
+# Convert to matrix
+heat_matrix <- heat_data %>%
+  column_to_rownames("treatment") %>%
+  as.matrix()
+
+# Z-score normalize (column-wise: across treatments per chromosome)
+heat_matrix_z <- scale(heat_matrix, center = TRUE, scale = TRUE)
+
+# Heatmap
+pheatmap(heat_matrix_z,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         main = "Z-score Normalized Avg Chromosome Count per Treatment",
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+
+```

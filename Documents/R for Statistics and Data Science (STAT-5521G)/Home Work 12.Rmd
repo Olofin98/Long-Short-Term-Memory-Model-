@@ -1,0 +1,82 @@
+---
+title: "Homework 12"
+author: "Olofin Daniel Oluwafemi"
+date: "2025-05-03"
+output:
+  html_document:
+    df_print: paged
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(shiny)
+library(dplyr)
+library(readr)
+library(janitor)
+library(knitr)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Read and clean the data
+movies <- read_csv("movies.csv") %>%
+  select(
+    title,
+    thtr_rel_year,
+    audience_score,
+    critics_score
+  ) %>%
+  filter(
+    !is.na(thtr_rel_year),
+    !is.na(audience_score),
+    !is.na(critics_score)
+  ) %>%
+  distinct()
+
+# Sorted unique years for the dropdown
+years <- sort(unique(movies$thtr_rel_year))
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# Define UI
+ui <- fluidPage(
+  titlePanel("Top Movies by Score and Year"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("year", "Select Year:", choices = years),
+      radioButtons("score_type", "Choose Score Type:",
+                   choices = c("Audience Score" = "audience_score",
+                               "Critic Score" = "critics_score"))
+    ),
+    
+    mainPanel(
+      tableOutput("top_movies")
+    )
+  )
+)
+
+# Define Server
+server <- function(input, output) {
+  output$top_movies <- renderTable({
+    movies %>%
+      filter(thtr_rel_year == input$year) %>%
+      arrange(desc(.data[[input$score_type]])) %>%
+      select(Movie = title, Year = thtr_rel_year, Score = all_of(input$score_type)) %>%
+      head(10)
+  })
+}
+
+# Run the app
+shinyApp(ui, server)
+
+```

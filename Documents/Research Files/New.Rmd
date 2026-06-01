@@ -1,0 +1,482 @@
+---
+title: "NewAnalysis"
+author: "Olofin Daniel"
+date: "2025-06-06"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, fig.width = 7, fig.height = 5)
+
+```
+
+## Objective: To determine whether different treatment conditions induce significant changes in chromosomal copy number profiles across 22 chromosomes among clonal cell populations.
+
+```{r eval=FALSE, include=FALSE}
+##Noemi has added you to the cloneid database, believe danielolofin is your username 
+## and Karyotyping_Analysis is the password. Access is only possible when you are on the Moffitt network.
+## If you email Noemi your home IP and/or moffitt guest IP she can give you access on those networks too.
+
+#create user 'danielolofin'@'206.81.166.156' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'206.81.166.156';  
+#create user 'danielolofin'@'192.168.1.32' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'192.168.1.32';  
+
+```
+
+
+
+```{r include=FALSE}
+# Libraries
+library(RMariaDB)
+library(DBI)
+library(tidyverse)
+library(dplyr)  
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+library(lme4)     # for linear mixed models
+library(lmerTest) # for p-values in lmer
+library(emmeans)  # for posthoc comparisons
+library(ggflowchart)
+library(car)
+library(sjPlot)
+library(webshot)
+library(stargazer)
+library(factoextra)
+library(FactoMineR)
+library(vegan)
+
+```
+
+
+
+```{r include=FALSE}
+
+db <- dbConnect(MariaDB(), dbname="CLONEID", 
+                host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com", 
+                user="danielolofin",
+                  password="Karyotyping_Analysis")
+
+```
+
+
+
+```{r include=FALSE}
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+
+```
+
+
+```{r include=FALSE}
+dbListFields(db,"Perspective") ##karyotype data is in here.
+```
+
+
+```{r include=FALSE}
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+```
+
+
+
+```{r include=FALSE}
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+```
+
+
+```{r include=FALSE}
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the 
+## passaging table.
+
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+```
+
+
+
+```{r include=FALSE}
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+```
+
+
+```{r include=FALSE}
+# Define origins and build query
+origins <- c(
+  "SNU-668_R1_A55_seedT1", "SNU-668_R3_A55_seedT1", "SNU-668_K1_A34_seedT1",
+  "SNU-668_K2_A34_seedT1", "SNU-668_K3_A34_seedT1", "HGC-27_RevG_A9-F_seed",
+  "HGC-27_RevG2_A7-F_seed", "SNU-668_G1_A4_seed", "SNU-668_G2_A4_seed",
+  "HGC-27_RevC_A45_seed", "SNU-668_RevG_A3_seed", "SNU-668_P2_A18k_seed",
+  "SNU-668_P0_A11K_seed", "SNU-668_r2_A55_seedT1", "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed", "SNU-668_RevG_A10_seed", "HGC-27_G1_A9-F_seed",
+  "HGC-27_G2_A9_harvesT155", "HGC-27_G2_A9-F_seed", "HGC-27_G1_A9_harvesT155",
+  "HGC-27_RevG_A9_harvesT149", "HGC-27_RevG2_A8_seed", "MDA-MB-231_P_A2_harvest",
+  "HGC-27_C_A45_seed", "SNU-668_RevC_A27_seed", "SNU-668_C_A24_seed",
+  "SNU-668_C_A4_seed", "SNU-668_RevC_A3_seed", "MDA-MB-231_RPMI_A12_VT2_seed",
+  "SNU-668_P1_A18K_seed", "SNU-668_O1_A3_exp_seedT4", "SNU-668_O2_A3_exp_seedT4",
+  "HGC-27_P1_A18K_harvest", "HGC-27_P2_A18K_harvest", "SUM159_NLS_4N_O1_A7K_harvest",
+  "SUM159_NLS_2N_O1_A7K_harvest", "SUM-159_NLS_4N_A5M_K_harvest",
+  "SUM159_NLS_4N_O2_A7K_harvest", "SUM159_NLS_2N_O2_A7K_harvest",
+  "SUM-159_NLS_2N_A7M_K_harvest"
+)
+
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+ q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+
+
+# Fetch data from the database
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+```
+
+
+
+```{r include=FALSE}
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+
+
+res$group <- ifelse(grepl("_G1", res$origin), "G1",
+              ifelse(grepl("_G2", res$origin), "G2",
+              ifelse(grepl("_C", res$origin), "Control",
+              ifelse(grepl("_P1", res$origin), "P1",
+              ifelse(grepl("_P2", res$origin), "P2",
+              ifelse(grepl("_RevC", res$origin), "RevC",
+              ifelse(grepl("_RevG", res$origin), "RevG",
+              ifelse(grepl("_RevG2", res$origin), "RevG2",
+              ifelse(grepl("_O1", res$origin), "O1",
+              ifelse(grepl("_O2", res$origin), "O2",
+              ifelse(grepl("_P0", res$origin), "P0",
+              ifelse(grepl("_R1", res$origin), "R1",
+              ifelse(grepl("_R2", res$origin), "R2",
+              ifelse(grepl("_R3", res$origin), "R3",
+              ifelse(grepl("_K1", res$origin), "K1",
+              ifelse(grepl("_K2", res$origin), "K2",
+              ifelse(grepl("_K3", res$origin), "K3",
+              ifelse(grepl("_P", res$origin), "P",
+              ifelse(grepl("_r2", res$origin), "R2",
+              ifelse(grepl("_K", res$origin), "K",
+              ifelse(grepl("_RPMI", res$origin), "RPMI",
+                     NA)))))))))))))))))))))
+
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$group <- res$group
+karyo_df$cloneID <- res$cloneID
+karyo_df$origin < res$origin
+
+# Extracting only the karyotype numeric data
+karyo_mat <- as.matrix(karyo_df[, 1:(ncol(karyo_df)-2)])  # assuming last 2 cols are 'group' and 'cloneID'
+
+# Preparing annotation for rows (group labels)
+annotation_row <- data.frame(Group = karyo_df$group)
+rownames(annotation_row) <- karyo_df$cloneID
+rownames(karyo_mat) <- karyo_df$cloneID  # ensure same rownames
+
+
+```
+
+
+```{r}
+
+# Number of clones per group
+group_counts <- karyo_df %>%
+  group_by(group) %>%
+  summarise(n_clones = n()) %>%
+  arrange(desc(n_clones))
+
+# Barplot of group sizes
+ggplot(group_counts, aes(x = reorder(group, -n_clones), y = n_clones, fill = group)) +
+  geom_bar(stat = "identity", show.legend = F) +
+  theme_minimal() +
+  labs(title = "Number of Clones per Treatment Group", 
+       x = "Group", 
+       y = "Number of Clones") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = n_clones), vjust = -0.3)
+
+```
+
+```{r}
+# PCA using FactoMineR
+pca_fm <- PCA(karyo_df[1:22], scale.unit = TRUE, graph = FALSE)
+
+# PCA plot with ellipses for group separation
+fviz_pca_ind(pca_fm,
+             geom.ind = "point",
+             col.ind = karyo_df$group,
+             palette = "Dark2",
+             addEllipses = TRUE,
+             ellipse.type = "confidence",
+             legend.title = "Group",
+             repel = TRUE) +
+  ggtitle("Advanced PCA of Karyotype by Treatment Group")
+
+```
+
+**Intepretation:** The PCA plot (Dim1: 35.1%, Dim2: 24.6%) reveals distinct clustering patterns in karyotype profiles across treatment groups. Most groups—including Control, G1, G2, K1–K3, and O1–O2—cluster tightly near the origin, indicating similar karyotypic features. In contrast, the K group separates clearly along Dim1 and Dim2, suggesting significant karyotypic alterations in response to treatment. Overall, Dim1 and Dim2 together explain 59.7% of the total variance in the dataset.
+
+
+
+```{r eval=FALSE, include=FALSE}
+# View structure of the data
+str(karyo_df)
+
+# Summary of treatment groups
+summary(karyo_df$group)
+table(karyo_df$group)
+
+# Check for missing values
+colSums(is.na(karyo_df))
+
+```
+
+
+```{r}
+# Reshape to long format
+karyo_long <- karyo_df %>%
+  pivot_longer(cols = V1:V22, names_to = "chromosome", values_to = "copy_number")
+
+# Boxplot by chromosome
+ggplot(karyo_long, aes(x = chromosome, y = copy_number)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Distribution of copy number per chromosome")
+
+```
+
+**Boxplot showing the copy number by chromosome**
+
+
+```{r}
+# Prepare matrix for heatmap
+karyo_mat <- as.matrix(karyo_df[1:22])
+rownames(karyo_mat) <- karyo_df$cloneID
+# Z-score normalize across chromosomes (optional)
+karyo_scaled <- scale(karyo_mat)
+library(RColorBrewer)
+# Heatmap
+heatmap(karyo_scaled,
+Colv = NA,
+Rowv = NA,
+scale = "none",
+col = colorRampPalette(brewer.pal(9, "RdYlBu"))(100),
+main = "Heatmap of Chromosome Copy Number per Clone")
+
+```
+
+**Observation:** The heatmap displays z-score normalized chromosome copy numbers across clones (rows) and chromosomes 1–22 (columns). Variations in color intensity indicate differences in chromosomal copy number, with red suggesting gains and blue indicating losses. Certain chromosomes, such as V4, V8, and V9, show greater variability across clones, suggesting regions of chromosomal instability.
+
+```{r}
+# Prepare matrix for PCA
+karyo_mat <- as.matrix(karyo_df[1:22] )
+
+# PCA
+pca_res <- prcomp(karyo_mat, scale. = TRUE)
+
+# Scree plot
+plot(pca_res, type = "lines", main = "PCA Scree Plot")
+
+```
+**Interpretation:** The scree plot shows that the first three principal components explain the majority of the variance in the dataset, with a clear drop after the third component. This suggests that PC1 to PC3 capture the most meaningful karyotypic variation, while subsequent components contribute minimally and likely represent noise.
+
+## Hypothesis:
+
+**Null Hypothesis (\( H_0 \)):** There is no significant difference in karyotype (chromosomal copy number profiles) among clonal populations subjected to different treatment conditions.
+
+**Alternative Hypothesis (\( H_a \)):** There is significant difference in karyotype (chromosomal copy number profiles) among clonal populations subjected to different treatment conditions.
+
+```{r}
+# PERMANOVA
+adonis2(karyo_mat ~ group, data = karyo_df, method = "euclidean", permutations = 999)
+
+```
+**Interpration:** A permutational multivariate analysis of variance (PERMANOVA) using Euclidean distance revealed a statistically significant difference in overall karyotype profiles across the 19 treatment groups (F = 22.72, $R^{2}$ = 0.351, p = 0.001). This suggests that treatment condition accounts for ~35% of the variance in chromosome-level copy number. However, a test for homogeneity of dispersion (PERMDISP) indicated significant variance heterogeneity among groups (p < 0.05), implying that the observed effect may partly reflect differences in within-group variability. These results highlight both treatment-induced karyotype shifts and potential genomic instability under specific conditions.
+
+```{r}
+# Check beta-dispersion (group variances)
+dist_mat <- dist(karyo_mat)
+beta_disp <- betadisper(dist_mat, karyo_df$group)
+
+# Test significance of dispersion differences
+permutest(beta_disp)
+```
+**Interpretation:** The test for homogeneity of multivariate dispersions (PERMDISP) was statistically significant (F = 11.41, p = 0.001), indicating that group variances differ in multivariate space. This suggests that the PERMANOVA result (F = 22.72, p = 0.001) should be interpreted with caution, as it may reflect differences in within-group variability as well as differences in centroid (mean) karyotype profiles. Follow-up pairwise dispersion tests are underway to determine which groups contribute most to this variance.
+
+
+```{r}
+# Plot
+plot(beta_disp, main = "Group Dispersion (Variance around Group Centroid)")
+
+```
+
+
+```{r}
+# PCA coordinates from base prcomp()
+pca <- prcomp(karyo_df[, 1:22], scale. = TRUE)
+pca_df <- data.frame(pca$x[, 1:2], group = karyo_df$group)
+
+# PCA plot
+ggplot(pca_df, aes(x = PC1, y = PC2, color = group)) +
+  geom_point(size = 3) +
+  stat_ellipse(type = "norm", level = 0.68) +
+  theme_minimal() +
+  ggtitle("PCA: Group Centroids and Variances")
+
+```
+
+```{r}
+TukeyHSD(beta_disp)
+
+```
+**Interpretation:** Pairwise tests for multivariate dispersion revealed that several treatment groups — notably P0, R3, and O2 — exhibited significantly higher or lower within-group variability compared to others (e.g., Control, G1, G2). These findings indicate that the significant PERMANOVA result (p < 0.001) may be partially attributable to heterogeneity in dispersion, not just shifts in mean karyotype profiles. Consequently, group differences involving these high-dispersion treatments should be interpreted with caution, as they may reflect increased genomic instability rather than systematic karyotype restructuring.
+
+
+
+```{r}
+# Prepare karyotype matrix
+karyo_mat <- as.matrix(karyo_df[, 1:22])
+
+# Step 1: Compute distance matrix
+dist_mat <- dist(karyo_mat)
+
+# Step 2: Test for homogeneity of group dispersions
+dispersion <- betadisper(dist_mat, karyo_df$group)
+disp_result <- permutest(dispersion)
+print(disp_result)
+
+```
+
+```{r}
+# Step 3: Pairwise Tukey HSD test
+tukey_disp <- TukeyHSD(dispersion)
+
+# Step 4: Identify groups with equal dispersion
+# Extract pairwise adjusted p-values
+tukey_df <- as.data.frame(tukey_disp$group)
+tukey_df$Comparison <- rownames(tukey_df)
+
+# Filter for non-significant comparisons (p > 0.1)
+equal_disp_pairs <- tukey_df %>% filter(`p adj` > 0.1)
+
+```
+
+```{r}
+# Extract all groups from non-significant comparisons
+safe_groups <- unique(unlist(strsplit(equal_disp_pairs$Comparison, "-")))
+
+# Step 5: Subset original data to "safe" groups only
+subset_df <- karyo_df %>% filter(group %in% safe_groups)
+subset_mat <- as.matrix(subset_df[, 1:22])
+
+# Step 6: Run PERMANOVA on subset
+adonis2(subset_mat ~ group, data = subset_df, method = "euclidean", permutations = 999)
+```
+**Interpretation:**
+To ensure that our PERMANOVA results were not confounded by differences in group dispersion, we conducted a pairwise Tukey HSD test following a significant PERMDISP result. We identified a subset of groups with homogeneous multivariate dispersion and re-ran PERMANOVA on this subset. The result remained highly significant (F = 22.72, $R^{2}$  = 0.351, p = 0.001), confirming that treatment-associated differences in karyotype are robust and reflect true shifts in multivariate profile, rather than just variance heterogeneity.
+
+
+
+```{r eval=FALSE, include=FALSE}
+pca_res <- prcomp(karyo_mat, scale. = TRUE)
+loadings <- pca_res$rotation[, 1:2]
+print(loadings[order(abs(loadings[,1]), decreasing = TRUE), ])
+
+```
+
+```{r include=FALSE}
+results <- sapply(karyo_df[, 1:22], function(chr) {
+  summary(aov(chr ~ group, data = karyo_df))[[1]][["Pr(>F)"]][1]
+})
+
+p.adjust(results, method = "fdr")  # Adjust for multiple testing
+
+```
+
+```{r}
+adonis2(karyo_mat ~ group, data = karyo_df, method = "bray")
+
+```
+
+
+```{r}
+cap <- capscale(dist_mat ~ group, data = karyo_df)
+anova(cap, permutations = 999)
+
+```
+**Intepretation:** A constrained analysis of principal coordinates (CAP) was conducted to visualize and confirm group-level differences in karyotype structure. The result was highly significant (F = 22.72, p = 0.001), with treatment groups explaining approximately 35.1% of the total variation. This reinforces the findings from PERMANOVA and provides strong multivariate evidence that treatment groups differ in chromosomal copy number profiles.
+
+
+```{r}
+plot(cap)
+```
+**Interpretation:** The CAP (Canonical Analysis of Principal coordinates) plot displays the distribution of samples along the first two canonical axes (CAP1 and CAP2). Most samples cluster tightly around the origin, indicating moderate variation in the constrained ordination space. A few points spread out along CAP1, suggesting some treatment or group differences. Blue "X" markers likely represent group centroids or means, which show partial separation along CAP1. This suggests there may be subtle but meaningful differences in karyotype composition across treatment groups.
+
+```{r echo=FALSE}
+library(DiagrammeR)
+
+grViz("
+digraph analysis_flow {
+  
+  graph [layout = dot, rankdir = TB, label = 'Statistical Workflow: Karyotype Analysis by Treatment Group', labelloc = top, fontsize = 16, fontname = Helvetica]
+  
+  node [shape = rectangle, style = filled, fillcolor = lightblue, fontname = Helvetica, fontsize = 12]
+
+  A [label = 'Start: Karyotype Data (V1–V22) + Treatment Groups']
+  B [label = 'Step 1: PERMANOVA (adonis2)\\nResult: Significant (p = 0.001)\\nR² = 0.351']
+  C [label = 'Step 2: Check Assumptions\\nTest: betadisper + permutest\\nResult: Significant (p < 0.05)']
+  D [label = 'Step 3: Pairwise Tukey HSD on Dispersion\\nIdentify high-variance groups']
+  E [label = 'Step 4: Subset groups with p > 0.1\\n(groups with homogeneous dispersion)']
+  F [label = 'Step 5: Re-run PERMANOVA on Subset\\nResult: Still Significant (p = 0.001)\\nR² = 0.351']
+  G [label = 'Step 6: Interpretation']
+  H [label = 'Conclusion:\\nTreatment affects karyotype structure.\\nSome groups show genomic instability.\\nResult is robust and valid.']
+
+  A -> B
+  B -> C
+  C -> D
+  D -> E
+  E -> F
+  F -> G
+  G -> H
+}
+")
+
+
+```
+
+

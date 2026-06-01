@@ -1,0 +1,512 @@
+library(DBI)
+library(tidyverse)
+library(dplyr)
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+db <- dbConnect(MariaDB(), dbname="CLONEID",
+host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com",
+user="danielolofin",
+password="Karyotyping_Analysis")
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+dbListFields(db,"Perspective") ##karyotype data is in here.
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the
+## passaging table.
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+# Define origins and build query
+origins <- c(
+"SNU-668_G1_A4_seed",
+"SNU-668_G2_A4_seed",
+"SNU-668_G1_A10_seed",
+"SNU-668_G2_A10_seed",
+"SNU-668_C_A4_seed",
+"SNU-668_C_A24_seed"
+)
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+# Fetch data from the database
+if (!dbIsValid(db)) {
+db <- dbConnect(...)
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+# Labeling treatment groups based on origin
+res$treatment <- ifelse(grepl("_G", res$origin), "GlucoseDeprived",
+ifelse(grepl("_C", res$origin), "Control", NA))
+#  Combining karyotype matrix with metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$origin <- res$origin
+karyo_df$cloneID <- res$cloneID
+# Just checking the freqency
+karyo_df %>%
+group_by(origin,treatment) %>%
+summarise(n=n())
+# Reshape to long format
+karyo_long <- melt(karyo_df,
+id.vars = c("treatment", "origin", "cloneID"),
+variable.name = "chromosome",
+value.name = "copy_number")
+# Order treatment groups
+karyo_long$group <- factor(karyo_long$treatment, levels = c("Control", "G1", "G2"))
+# Chromosome-wise boxplot
+ggplot(karyo_long, aes(x = treatment, y = copy_number, fill = group)) +
+geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+facet_wrap(~chromosome, scales = "free_y", ncol = 6) +
+labs(title = "Chromosome-wise Copy Number by Treatment Group",
+x = "Treatment Group",
+y = "Copy Number") +
+scale_fill_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+theme_minimal(base_size = 12) +
+theme(
+legend.position = "none",
+strip.text = element_text(size = 10, face = "bold"),
+plot.title = element_text(hjust = 0.5, face = "bold")
+)
+# Chromosome-wise boxplot
+ggplot(karyo_long, aes(x = treatment, y = copy_number, fill = group)) +
+geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+geom_jitter(width = 0.2, alpha = 0.6) +
+labs(title = "Chromosome-wise Copy Number by Treatment Group",
+x = "Treatment Group",
+y = "Copy Number") +
+scale_fill_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+theme_minimal(base_size = 12) +
+theme(
+legend.position = "none",
+strip.text = element_text(size = 10, face = "bold"),
+plot.title = element_text(hjust = 0.5, face = "bold")
+)
+# Extract only karyotype numeric data (first N columns)
+karyo_matrix <- as.matrix(karyo_df[, 1:(ncol(karyo_df) - 3)])
+# Create annotation for row (group label)
+annotation_row <- data.frame(Group = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+rownames(karyo_matrix) <- karyo_df$cloneID
+# Z-score scaling (column-wise standardization)
+karyo_scaled <- scale(karyo_matrix)
+# Heatmap
+pheatmap(karyo_scaled,
+annotation_row = annotation_row,
+show_rownames = FALSE,
+cluster_rows = TRUE,
+cluster_cols = TRUE,
+main = "Karyotype Heatmap by Group",
+fontsize_row = 6,
+color = colorRampPalette(c("navy", "white", "firebrick3"))(100))
+# Define origins and fetch from database
+origins <- c(
+"SNU-668_G1_A4_seed",
+"SNU-668_G2_A4_seed",
+"SNU-668_G1_A10_seed",
+"SNU-668_G2_A10_seed",
+"SNU-668_C_A4_seed",
+"SNU-668_C_A24_seed"
+)
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+# Execute and fetch query
+if (!dbIsValid(db)) {
+db <- dbConnect(...)
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+# Decode BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(p) / 8, endian = "big")
+})
+# Building the karyotype matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+#Assigning group (G1, G2, Control) based on origin
+res$group <- ifelse(grepl("_G1", res$origin), "G1",
+ifelse(grepl("_G2", res$origin), "G2",
+ifelse(grepl("_C", res$origin), "Control", NA)))
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$group <- res$group
+karyo_df$cloneID <- res$cloneID
+# Extracting only the karyotype numeric data
+karyo_mat <- as.matrix(karyo_df[, 1:(ncol(karyo_df)-2)])  # assuming last 2 cols are 'group' and 'cloneID'
+# Preparing annotation for rows (group labels)
+annotation_row <- data.frame(Group = karyo_df$group)
+rownames(annotation_row) <- karyo_df$cloneID
+rownames(karyo_mat) <- karyo_df$cloneID  # ensure same rownames
+# Generating heatmap with clustering and group annotation
+pheatmap(karyo_mat,
+scale = "row",                      # standardize rows (chromosome profiles)
+clustering_distance_rows = "euclidean",
+clustering_distance_cols = "euclidean",
+clustering_method = "ward.D2",
+annotation_row = annotation_row,
+show_rownames = FALSE,
+main = "Karyotype Clustering Heatmap (G1, G2, Control)")
+# Computing a summary karyotype score per cell
+# For example, use the sum or mean of absolute deviations from euploid (e.g., 2.0)
+# Assuming values close to 2 are "normal", deviations reflect instability
+karyo_df$karyotype_score <- apply(karyo_df[, 1:(ncol(karyo_df) - 3)], 1, function(x) sum(abs(x - 2)))
+# Creating a boxplot
+ggplot(karyo_df, aes(x = group, y = karyotype_score, fill = group)) +
+geom_boxplot(outlier.shape = NA, width = 0.6, alpha = 0.8) +
+geom_jitter(width = 0.2, alpha = 0.6) +
+labs(title = "Karyotype Score by Group",
+x = "Treatment Group",
+y = "Total Genomic Instability Score (|copy number - 2| sum)") +
+theme_minimal() +
+theme(legend.position = "none",
+plot.title = element_text(hjust = 0.5)) +
+scale_fill_manual(values = c("G1" = "#E69F00", "G2" = "#56B4E9", "Control" = "#009E73"))
+# Step 1: Extract only the karyotype numeric data
+karyo_matrix <- as.matrix(karyo_df[, 1:(ncol(karyo_df) - 3)])
+rownames(karyo_matrix) <- karyo_df$cloneID
+# Step 2: Prepare row (sample-level) annotation
+annotation_row <- data.frame(Group = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+# Define origins and build query
+origins <- c(
+"SNU-668_G1_A4_seed",
+"SNU-668_G2_A4_seed",
+"SNU-668_G1_A10_seed",
+"SNU-668_G2_A10_seed",
+"SNU-668_C_A4_seed",
+"SNU-668_C_A24_seed"
+)
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+# Fetch data from the database
+if (!dbIsValid(db)) {
+db <- dbConnect(...)
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+# Labeling treatment groups based on origin
+res$treatment <- ifelse(grepl("_G", res$origin), "GlucoseDeprived",
+ifelse(grepl("_C", res$origin), "Control", NA))
+#  Combining karyotype matrix with metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$origin <- res$origin
+karyo_df$cloneID <- res$cloneID
+# Just checking the freqency
+karyo_df %>%
+group_by(origin,treatment) %>%
+summarise(n=n())
+# Step 1: Extract only the karyotype numeric data
+karyo_matrix <- as.matrix(karyo_df[, 1:(ncol(karyo_df) - 3)])
+rownames(karyo_matrix) <- karyo_df$cloneID
+# Step 2: Prepare row (sample-level) annotation
+annotation_row <- data.frame(Group = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+# Step 3: Z-score scaling
+karyo_scaled <- scale(karyo_matrix)
+# Step 4: Compute p-values per chromosome (e.g., Control vs GlucoseDeprived)
+# First create a treatment2 label that merges G1 and G2
+karyo_df$treatment2 <- ifelse(karyo_df$treatment %in% c("G1", "G2"), "GlucoseDeprived", "Control")
+# Compute p-values using t-test
+chromosome_pvals <- apply(karyo_df[, 1:(ncol(karyo_df) - 4)], 2, function(col) {
+t.test(col ~ karyo_df$treatment2)$p.value
+})
+# Compute p-values using t-test
+chromosome_pvals <- apply(karyo_df[, 1:(ncol(karyo_df) - 4)], 2, function(col) {
+t.test(col ~ karyo_df$treatment2)$p.value
+})
+# Define origins and build query
+origins <- c(
+"SNU-668_G1_A4_seed",
+"SNU-668_G2_A4_seed",
+"SNU-668_G1_A10_seed",
+"SNU-668_G2_A10_seed",
+"SNU-668_C_A4_seed",
+"SNU-668_C_A24_seed"
+)
+# Fetch data from the database
+if (!dbIsValid(db)) {
+db <- dbConnect(...)
+}
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+# Step 1: Extract only the karyotype numeric data
+karyo_matrix <- as.matrix(karyo_df[, 1:(ncol(karyo_df) - 3)])
+rownames(karyo_matrix) <- karyo_df$cloneID
+# Step 2: Prepare row (sample-level) annotation
+annotation_row <- data.frame(Group = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+# Step 3: Z-score scaling
+karyo_scaled <- scale(karyo_matrix)
+# Step 4: Compute p-values per chromosome (e.g., Control vs GlucoseDeprived)
+# First create a treatment2 label that merges G1 and G2
+karyo_df$treatment2 <- ifelse(karyo_df$treatment %in% c("G1", "G2"), "GlucoseDeprived", "Control")
+# Compute p-values using t-test
+chromosome_pvals <- apply(karyo_df[, 1:(ncol(karyo_df) - 4)], 2, function(col) {
+t.test(col ~ karyo_df$treatment2)$p.value
+})
+knitr::opts_chunk$set(echo = TRUE)
+db <- dbConnect(MariaDB(), dbname="CLONEID",
+host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com",
+user="danielolofin",
+password="Karyotyping_Analysis")
+# Libraries
+library(RMariaDB)
+library(DBI)
+library(tidyverse)
+library(dplyr)
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+db <- dbConnect(MariaDB(), dbname="CLONEID",
+host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com",
+user="danielolofin",
+password="Karyotyping_Analysis")
+db <- dbConnect(MariaDB(), dbname="CLONEID",
+host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com",
+user="danielolofin",
+password="Karyotyping_Analysis")
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+dbListFields(db,"Perspective") ##karyotype data is in here.
+knitr::opts_chunk$set(echo = TRUE)
+##Noemi has added you to the cloneid database, believe danielolofin is your username
+## and Karyotyping_Analysis is the password. Access is only possible when you are on the Moffitt network.
+## If you email Noemi your home IP and/or moffitt guest IP she can give you access on those networks too.
+#create user 'danielolofin'@'206.81.166.156' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'206.81.166.156';
+#create user 'danielolofin'@'192.168.1.32' identified by 'Karyotyping_Analysis';
+#GRANT SELECT ON *.* TO 'danielolofin'@'192.168.1.32';
+# Libraries
+library(RMariaDB)
+library(DBI)
+library(tidyverse)
+library(dplyr)
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+db <- dbConnect(MariaDB(), dbname="CLONEID",
+host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com",
+user="danielolofin",
+password="Karyotyping_Analysis")
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+dbListFields(db,"Perspective") ##karyotype data is in here.
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the
+## passaging table.
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+# Define origins and build query
+origins <- c(
+"SNU-668_G1_A4_seed",
+"SNU-668_G2_A4_seed",
+"SNU-668_G1_A10_seed",
+"SNU-668_G2_A10_seed",
+"SNU-668_C_A4_seed",
+"SNU-668_C_A24_seed"
+)
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+# Fetch data from the database
+if (!dbIsValid(db)) {
+db <- dbConnect(...)
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+# Labeling treatment groups based on origin
+res$treatment <- ifelse(grepl("_G", res$origin), "GlucoseDeprived",
+ifelse(grepl("_C", res$origin), "Control", NA))
+#  Combining karyotype matrix with metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$origin <- res$origin
+karyo_df$cloneID <- res$cloneID
+# Just checking the freqency
+karyo_df %>%
+group_by(origin,treatment) %>%
+summarise(n=n())
+# Reshape to long format
+karyo_long <- melt(karyo_df,
+id.vars = c("treatment", "origin", "cloneID"),
+variable.name = "chromosome",
+value.name = "copy_number")
+# Order treatment groups
+karyo_long$group <- factor(karyo_long$treatment, levels = c("Control", "G1", "G2"))
+# Chromosome-wise boxplot
+ggplot(karyo_long, aes(x = treatment, y = copy_number, fill = group)) +
+geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+facet_wrap(~chromosome, scales = "free_y", ncol = 6) +
+labs(title = "Chromosome-wise Copy Number by Treatment Group",
+x = "Treatment Group",
+y = "Copy Number") +
+scale_fill_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+theme_minimal(base_size = 12) +
+theme(
+legend.position = "none",
+strip.text = element_text(size = 10, face = "bold"),
+plot.title = element_text(hjust = 0.5, face = "bold")
+)
+# Chromosome-wise boxplot
+ggplot(karyo_long, aes(x = treatment, y = copy_number, fill = group)) +
+geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+geom_jitter(width = 0.2, alpha = 0.6) +
+labs(title = "Chromosome-wise Copy Number by Treatment Group",
+x = "Treatment Group",
+y = "Copy Number") +
+scale_fill_manual(values = c("Control" = "#009E73", "G1" = "#E69F00", "G2" = "#56B4E9")) +
+theme_minimal(base_size = 12) +
+theme(
+legend.position = "none",
+strip.text = element_text(size = 10, face = "bold"),
+plot.title = element_text(hjust = 0.5, face = "bold")
+)
+# Extract only karyotype numeric data (first N columns)
+karyo_matrix <- as.matrix(karyo_df[, 1:(ncol(karyo_df) - 3)])
+# Create annotation for row (group label)
+annotation_row <- data.frame(Group = karyo_df$treatment)
+rownames(annotation_row) <- karyo_df$cloneID
+rownames(karyo_matrix) <- karyo_df$cloneID
+# Z-score scaling (column-wise standardization)
+karyo_scaled <- scale(karyo_matrix)
+# Heatmap
+pheatmap(karyo_scaled,
+annotation_row = annotation_row,
+show_rownames = FALSE,
+cluster_rows = TRUE,
+cluster_cols = TRUE,
+main = "Karyotype Heatmap by Group",
+fontsize_row = 6,
+color = colorRampPalette(c("navy", "white", "firebrick3"))(100))
+# Define origins and fetch from database
+origins <- c(
+"SNU-668_G1_A4_seed",
+"SNU-668_G2_A4_seed",
+"SNU-668_G1_A10_seed",
+"SNU-668_G2_A10_seed",
+"SNU-668_C_A4_seed",
+"SNU-668_C_A24_seed"
+)
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+# Execute and fetch query
+if (!dbIsValid(db)) {
+db <- dbConnect(...)
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+# Decode BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+raw_vec <- p
+readBin(raw_vec, what = "double", n = length(p) / 8, endian = "big")
+})
+# Building the karyotype matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+#Assigning group (G1, G2, Control) based on origin
+res$group <- ifelse(grepl("_G1", res$origin), "G1",
+ifelse(grepl("_G2", res$origin), "G2",
+ifelse(grepl("_C", res$origin), "Control", NA)))
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$group <- res$group
+karyo_df$cloneID <- res$cloneID
+# Extracting only the karyotype numeric data
+karyo_mat <- as.matrix(karyo_df[, 1:(ncol(karyo_df)-2)])  # assuming last 2 cols are 'group' and 'cloneID'
+# Preparing annotation for rows (group labels)
+annotation_row <- data.frame(Group = karyo_df$group)
+rownames(annotation_row) <- karyo_df$cloneID
+rownames(karyo_mat) <- karyo_df$cloneID  # ensure same rownames
+# Generating heatmap with clustering and group annotation
+pheatmap(karyo_mat,
+scale = "row",                      # standardize rows (chromosome profiles)
+clustering_distance_rows = "euclidean",
+clustering_distance_cols = "euclidean",
+clustering_method = "ward.D2",
+annotation_row = annotation_row,
+show_rownames = FALSE,
+main = "Karyotype Clustering Heatmap (G1, G2, Control)")
+# Computing a summary karyotype score per cell
+# For example, use the sum or mean of absolute deviations from euploid (e.g., 2.0)
+# Assuming values close to 2 are "normal", deviations reflect instability
+karyo_df$karyotype_score <- apply(karyo_df[, 1:(ncol(karyo_df) - 3)], 1, function(x) sum(abs(x - 2)))
+# Creating a boxplot
+ggplot(karyo_df, aes(x = group, y = karyotype_score, fill = group)) +
+geom_boxplot(outlier.shape = NA, width = 0.6, alpha = 0.8) +
+geom_jitter(width = 0.2, alpha = 0.6) +
+labs(title = "Karyotype Score by Group",
+x = "Treatment Group",
+y = "Total Genomic Instability Score (|copy number - 2| sum)") +
+theme_minimal() +
+theme(legend.position = "none",
+plot.title = element_text(hjust = 0.5)) +
+scale_fill_manual(values = c("G1" = "#E69F00", "G2" = "#56B4E9", "Control" = "#009E73"))
+dbListTables(db)
+installed.packages()[,"packages"]
+installed.packages()[,"packages"]

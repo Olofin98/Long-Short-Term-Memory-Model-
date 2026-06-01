@@ -1,0 +1,196 @@
+---
+title: "R Lab 6"
+output: html_document
+date: '2022-06-24'
+---
+
+```{r setup, include=FALSE}
+rm(list = ls()) # clear our workspace. Always start with this
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("C:/Users/abioyea/Documents/Personal/Stats Clinic/Stats 101")
+```
+
+Today, we will examine models that allow us to compare proportions and odds.
+
+```{r}
+library(dplyr) #great for data management
+```
+
+Today's lab will use the 10 year followup data of the resident doctors' study.
+
+```{r}
+library(readr)
+rds <- read_csv("rds10y.csv")  #you can do this because you have already set a working directory 
+```
+
+# Poisson regression
+
+Poisson regression can be used when the dependent variable is either a count variable or a rate (that is a count variable with the time variable over which the data was collected).
+
+The Poisson regression is a model of the log of the mean. Taking the log of the dependent variable allows us to analyze it almost like a linear regression. The Poisson regression model is also called a log-linear model.
+
+
+### Poisson for count data
+##### Example
+
+You are interested in determining whether the mean number of call duty days done differs by gender among resident doctors. Your dataset includes a variable for the total number of calls.
+
+First, take a look at the dataset
+```{r}
+head(rds)
+```
+
+You can review the data in more detail using tables and visualization as shown in previous labs. For now, lets move to modeling the data.
+```{r}
+fish.m1 <- glm(calls ~ female, data=rds, family=poisson(link = "log"))
+summary(fish.m1)
+```
+
+You have to exponentiate the model coefficients to interpret. How do you interpret?
+```{r}
+exp(cbind(OR=coef(fish.m1), confint(fish.m1)))
+```
+
+Interepretaion
+- We infer that the mean number of calls during the residency was 55% less among female resident doctors compared to males
+- the two sided p value was <0.0001 which is lower than the alpha of 0.05,
+- So we reject the null hypothesis that the log(mean) is zero, and
+- conclude that the females had fewer calls than male counterparts.
+
+
+### Poisson for rate data
+Question - why is it a good idea to account for time in our analysis comparing the number of calls in females vs males
+
+Time could be a confounder and we can account for it in the analysis using the Poisson regression by introducing it as an OFFSET TERM.
+
+##### Example
+You are interested in determining whether the call duty days per year differs by gender among resident doctors.Your dataset includes a variable for the total number of calls and a variable for the number of years a resident has been in the residency program.
+
+```{r}
+fish.m2 <- glm(calls ~ female, data=rds, family=poisson(link = "log"), offset = log(resyears))
+summary(fish.m2)
+```
+
+How do you interpret?
+```{r}
+exp(cbind(OR=coef(fish.m2), confint(fish.m2)))
+```
+
+Interpretation
+- We infer that the call duty rate was 14% lower among female resident doctors compared to male counterparts, or
+- We infer that the call duty rate among female resident doctors was 0.86 times the rate among male counterparts.
+- the two sided p value was <0.0001 which is lower than the alpha of 0.05,
+- So we reject the null hypothesis that the log(rate) is zero, and
+- conclude that the females had a lower call duty rate than male counterparts.
+
+
+
+# Survival Analysis key terms
+##### Discussion
+In 2009, you conducted a study among resident doctors asking them about their workload. 
+
+Every year for 10 years, you return to the same group of doctors, and ask them if they are still practicing clinical medicine. If they stopped practicing, you asked them when they stopped and recorded the date in month and year.
+
+1) What is the time origin of the study?
+2) What is the target event?
+3) What is the time-scale?
+4) When does administrative censoring happen in this study?
+5) Give an example of a reason a patient may be censored before the end of follow-up in this study.
+
+
+
+# Kaplan-Meier
+### Default KM plots
+##### Example
+```{r}
+library(survival)
+plot(survfit(Surv(switch_mos, exit) ~ 1, data = rds),  mark.time = TRUE,
+     xlab = "Months", 
+     ylab = "Overall survival probability")
+```
+You can focus on the y-axis you're interested in. It gives you a confidence interval by default but you can take it out if you want.
+```{r}
+library(survival)
+plot(survfit(Surv(switch_mos, exit) ~ 1, data = rds), mark.time = TRUE, conf.int = FALSE,
+     xlab = "Time to exiting specialty practice, months", 
+     ylab = "Overall survival probability",
+     ylim = c(0.6, 1))
+```
+
+
+### Kaplan Meier to compare groups
+You can use Kaplan-Meier to compare
+```{r}
+library(survival)
+plot(survfit(Surv(switch_mos, exit) ~ female, data = rds),  mark.time = TRUE, conf.int = FALSE, col = c(2,4),
+     xlab = "Time to exiting specialty practice, months", 
+     ylab = "Overall survival probability",
+     ylim = c(0.6, 1))
+legend(20, 0.75, c("Male", "Female"), col = c(2,4), lty = 1)
+```
+
+
+Including the confidence intervals helps when comparing
+```{r}
+library(survival)
+plot(survfit(Surv(switch_mos, exit) ~ female, data = rds),  mark.time = TRUE, conf.int = TRUE, col = c(2,4),
+     xlab = "MTime to exiting specialty practice, months", 
+     ylab = "Overall survival probability",
+     ylim = c(0.6, 1))
+legend(20, 0.75, c("Male", "Female"), col = c(2,4), lty = 1)
+
+```
+We can use ggplot to visualize the confidence intervals even better. Same as base R.
+```{r}
+library(survival)
+library(ggplot2)
+library(ggfortify)
+km_trt_fit <- survfit(Surv(switch_mos, exit) ~ female, data=rds)
+autoplot(km_trt_fit, ylim = c(0.6, 1), xlim = c(0, 120)) +
+  xlab("Time to exiting specialty practice, months") + 
+  ylab("Overall survival probability") +
+  theme_bw()
+```
+
+### Log-rank test
+We can use the log rank test to compare groups, and obtain a p-value.
+
+Null hypothesis, Ho: There is no difference in the survival between the two groups
+Alternative hypothesis, Ha: There is a difference in the survival between the two groups
+```{r}
+survdiff(Surv(switch_mos, exit) ~ female, data=rds)
+```
+
+
+# Cox Model
+Sometimes we want to:
+- obtain a hazard ratio and confidence intervals, instead of/along with a KM plot
+- adjust for confounding
+
+We can then use Cox proportional hazards models
+```{r}
+res.cox <- coxph(Surv(switch_mos, exit) ~ female, data = rds)
+summary(res.cox)
+```
+
+How do you interpret?
+- The hazard of leaving specialty practice is 0.50 times among females compared to males
+
+
+The Cox model assumes the hazards are proportional. That is, time does not influence the difference in the shape of the two curves. You can use the following function to test whether the proportional hazards assumption holds. 
+
+If the p-value is significant, the proportional hazards assumption does not hold.
+```{r}
+cox.zph(res.cox)
+```
+
+If the proportional hazards assumption does not hold, then you can introduce an interaction term for time in the model.
+
+
+
+
+
+

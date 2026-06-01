@@ -1,0 +1,111 @@
+---
+title: "Statistical Method Assignment IV"
+author: "Olofin Daniel Oluwafemi"
+date: "2025-05-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 3
+```{r message=FALSE, warning=FALSE}
+#Load Packages
+library(lubridate)
+library(forecast)
+library(tseries)
+library(ggplot2)
+
+# Loading Data
+AssignmentIV <- read.delim("~/R for Statistics and Data Science (STAT-5521G)/AssignmentIV.txt")
+
+```
+
+```{r message=FALSE, warning=FALSE}
+AssignmentIV$SP500 <- ts(AssignmentIV$SP500)
+
+autoplot(AssignmentIV$SP500) +
+  ggtitle("S&P 500 Time Series") +
+  labs(x = "Time", y = "Index Value")+
+  theme_minimal()
+```
+
+
+## 1. Does the data look stationary? Provide the R output. Do you need any transformation if you do provide an R output for it? (5pts).
+
+**Null Hypothesis:** The time series is non-stationary. 
+**Alternative Hypothesis:** The time series is stationary.
+
+```{r message=FALSE, warning=FALSE}
+# Plot ACF and PACF
+acf(AssignmentIV$SP500, main = "ACF of SP500")
+pacf(AssignmentIV$SP500, main = "PACF of SP500")
+
+# Perform Augmented Dickey-Fuller Test
+adf.test(AssignmentIV$SP500)
+```
+**Decision and Conclusion:** Since the p-value associated with the Dickey-Fuller test is greater than 0.05, we have all evidence to conclude that the data is non-stationary. Therefore, transformation and differencing of the data is inevitable. 
+
+## 2. Provide an R output for test for stationarity. (5pts)
+
+```{r message=FALSE, warning=FALSE}
+#Transformation and Differencing
+diff_sp <- diff(AssignmentIV$SP500)
+
+# Test of Stationary
+adf.test(diff_sp)
+```
+
+**Decision and Conclusion:** Since the p-value associated with the Dickey-Fuller test is lesser than 0.05 level of significance, we have all evidence to conclude that the data is stationary. Therefore, we can go ahead to modeling our data.
+
+
+## 3. What is the order of the ARIMA model? Provide the R output of how did you find it.(10pts)
+
+```{r message=FALSE, warning=FALSE}
+model <- arima(diff_sp, order = c(1,1,3))
+summary(model)
+```
+
+
+## 4. Report the theoretical model with the corresponding parameters. (5pts)
+
+$$
+\text{ARIMA}(1,1,3)
+$$
+
+This implies the model can be written in its theoretical form as:
+
+$$
+(1 - \phi_1 B)(1 - B)y_t = (1 + \theta_1 B + \theta_2 B^2 + \theta_3 B^3)\varepsilon_t
+$$
+
+Where:
+
+- \( y_t \) is the S&P 500 index at time \( t \)
+- \( B \) is the backshift operator
+- \( \phi_1 \) is the autoregressive (AR) coefficient
+- \( \theta_1, \theta_2, \theta_3 \) are the moving average (MA) coefficients
+- \( \varepsilon_t \) is the white noise error term
+
+So, the final theoretical ARIMA model is:
+
+$$
+(1 + 0.6169 B)(1 - B)y_t = (1 - 0.1644 B - 0.7313 B^2 - 0.0823 B^3)\varepsilon_t
+$$
+
+
+## 5. Provide an estimated values for the parameters, using R and the fitted model output. (10pts)
+```{r message=FALSE, warning=FALSE}
+model$coef
+```
+
+
+## 6. Provide a forecast plot for the model using R. (5 pts)
+
+```{r message=FALSE, warning=FALSE}
+autoplot(forecast(model))+
+  labs(x = "Time", y = "Index Value")+
+  theme_minimal()
+```
+

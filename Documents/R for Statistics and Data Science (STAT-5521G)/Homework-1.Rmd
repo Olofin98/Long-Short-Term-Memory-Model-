@@ -1,0 +1,52 @@
+---
+title: "Homework Two"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+#Making values not to read in scientific form
+options(scipen = 999)
+```
+
+# a. Make a section with header “Visualization of trees data”. Under the section header, make a chunk that contains the command `plot(trees)`. Set the chunk options so that the code is not displayed, but the plot is:
+
+```{r echo=FALSE}
+plot(trees)
+```
+
+# b. Make a section with header “Area of a circle”. Under the section header, make a chunk that contains the command `area <- pi * r^2`. Set the chunk options so that the code is displayed, but not evaluated. (Grad student only). Insert the LaTeX code
+
+```{r eval=FALSE}
+area <- pi * r^2
+```
+
+Area of a Circle : $A = \pi r^2$
+
+# c. Make a section with header “The great grey beast February”. Under the section header, make a chunk that calculates the number of seconds in the month of February (no leap year) and assignsthe value to a variable seconds. Set the chunk options so that the code is not displayed, but is evaluated. Write a line of text that states how many seconds are in February, making use of the value of the seconds variable
+```{r echo=FALSE}
+#Assigning the number of days in Feb to Num_of_days_in_Feb
+Num_of_days_in_Feb <- 28
+#Assigning the number of hours in a day to Num_of_hours_in_a_day
+Num_of_hours_in_a_day <- 24
+#Assigning the number of minutes in an hour to Num_of_minutes_in_an_hour
+Num_of_minutes_in_an_hour <- 60
+#Assigning the number of second in a minute to Num_of_seconds_in_a_minute
+Num_of_seconds_in_a_Minute<- 60 
+
+seconds <- Num_of_seconds_in_a_Minute * Num_of_minutes_in_an_hour * Num_of_hours_in_a_day * Num_of_days_in_Feb 
+```
+The number of seconds in February is **`r seconds`**.
+
+# d. Make a section with header “Tasty dishes”. Consult the RMarkdown cheat sheet and see how to make an ordered list. Create an ordered list with at least three of your favorite food
+
+1. Eba and Efo
+2. Fried Rice
+3. Dodo and Egg
+

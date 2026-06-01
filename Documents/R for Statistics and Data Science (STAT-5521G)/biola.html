@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<!-- saved from url=(0043)http://127.0.0.1:5008/Final%20Project_R.Rmd -->
+<html class=""><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <script type="application/shiny-singletons"></script>
+  <script type="application/html-dependencies">jquery[3.6.0];shiny-css[1.8.1.1];shiny-javascript[1.8.1.1]</script>
+<script src="./biola_files/jquery.min.js.download"></script>
+<link href="./biola_files/shiny.min.css" rel="stylesheet">
+<script src="./biola_files/shiny.min.js.download"></script>  <script src="./biola_files/rmd_loader.js.download"></script>
+  <link href="./biola_files/rmd_loader.css" rel="stylesheet">
+<script src="./biola_files/header-attrs.js.download"></script><meta name="viewport" content="width=device-width, initial-scale=1"><link href="./biola_files/bootstrap.min.css" rel="stylesheet" type="text/css"><script src="./biola_files/bootstrap.min.js.download"></script><script src="./biola_files/html5shiv.min.js.download"></script><script src="./biola_files/respond.min.js.download"></script><style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style><script src="./biola_files/tabsets.js.download"></script><link href="./biola_files/default.css" rel="stylesheet" type="text/css"><script src="./biola_files/highlight.js.download"></script><link href="./biola_files/pagedtable.css" rel="stylesheet" type="text/css"><script src="./biola_files/pagedtable.js.download"></script><link href="./biola_files/rmd_perf.css" rel="stylesheet" type="text/css"><script src="./biola_files/rmd_perf.js.download"></script><meta name="rstudio_origin" content="127.0.0.1:26565"><script src="./biola_files/rsiframe.js.download"></script>
+
+
+<meta name="generator" content="pandoc">
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE">
+
+
+<meta name="author" content="Moshood A. Garuba">
+
+<meta name="date" content="2025-05-05">
+
+<title>From Chaos to Clarity: Cleaning and Analyzing Dirty Restaurant Sales Data Using R</title>
+
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+
+<style type="text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+
+<script type="text/javascript" src="./biola_files/MathJax.js.download"></script><style type="text/css">.MathJax_Hover_Frame {border-radius: .25em; -webkit-border-radius: .25em; -moz-border-radius: .25em; -khtml-border-radius: .25em; box-shadow: 0px 0px 15px #83A; -webkit-box-shadow: 0px 0px 15px #83A; -moz-box-shadow: 0px 0px 15px #83A; -khtml-box-shadow: 0px 0px 15px #83A; border: 1px solid #A6D ! important; display: inline-block; position: absolute}
+.MathJax_Menu_Button .MathJax_Hover_Arrow {position: absolute; cursor: pointer; display: inline-block; border: 2px solid #AAA; border-radius: 4px; -webkit-border-radius: 4px; -moz-border-radius: 4px; -khtml-border-radius: 4px; font-family: 'Courier New',Courier; font-size: 9px; color: #F0F0F0}
+.MathJax_Menu_Button .MathJax_Hover_Arrow span {display: block; background-color: #AAA; border: 1px solid; border-radius: 3px; line-height: 0; padding: 4px}
+.MathJax_Hover_Arrow:hover {color: white!important; border: 2px solid #CCC!important}
+.MathJax_Hover_Arrow:hover span {background-color: #CCC!important}
+</style><style type="text/css">#MathJax_About {position: fixed; left: 50%; width: auto; text-align: center; border: 3px outset; padding: 1em 2em; background-color: #DDDDDD; color: black; cursor: default; font-family: message-box; font-size: 120%; font-style: normal; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; z-index: 201; border-radius: 15px; -webkit-border-radius: 15px; -moz-border-radius: 15px; -khtml-border-radius: 15px; box-shadow: 0px 10px 20px #808080; -webkit-box-shadow: 0px 10px 20px #808080; -moz-box-shadow: 0px 10px 20px #808080; -khtml-box-shadow: 0px 10px 20px #808080; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+#MathJax_About.MathJax_MousePost {outline: none}
+.MathJax_Menu {position: absolute; background-color: white; color: black; width: auto; padding: 2px; border: 1px solid #CCCCCC; margin: 0; cursor: default; font: menu; text-align: left; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; z-index: 201; box-shadow: 0px 10px 20px #808080; -webkit-box-shadow: 0px 10px 20px #808080; -moz-box-shadow: 0px 10px 20px #808080; -khtml-box-shadow: 0px 10px 20px #808080; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+.MathJax_MenuItem {padding: 2px 2em; background: transparent}
+.MathJax_MenuArrow {position: absolute; right: .5em; padding-top: .25em; color: #666666; font-size: .75em}
+.MathJax_MenuActive .MathJax_MenuArrow {color: white}
+.MathJax_MenuArrow.RTL {left: .5em; right: auto}
+.MathJax_MenuCheck {position: absolute; left: .7em}
+.MathJax_MenuCheck.RTL {right: .7em; left: auto}
+.MathJax_MenuRadioCheck {position: absolute; left: 1em}
+.MathJax_MenuRadioCheck.RTL {right: 1em; left: auto}
+.MathJax_MenuLabel {padding: 2px 2em 4px 1.33em; font-style: italic}
+.MathJax_MenuRule {border-top: 1px solid #CCCCCC; margin: 4px 1px 0px}
+.MathJax_MenuDisabled {color: GrayText}
+.MathJax_MenuActive {background-color: Highlight; color: HighlightText}
+.MathJax_MenuDisabled:focus, .MathJax_MenuLabel:focus {background-color: #E8E8E8}
+.MathJax_ContextMenu:focus {outline: none}
+.MathJax_ContextMenu .MathJax_MenuItem:focus {outline: none}
+#MathJax_AboutClose {top: .2em; right: .2em}
+.MathJax_Menu .MathJax_MenuClose {top: -10px; left: -10px}
+.MathJax_MenuClose {position: absolute; cursor: pointer; display: inline-block; border: 2px solid #AAA; border-radius: 18px; -webkit-border-radius: 18px; -moz-border-radius: 18px; -khtml-border-radius: 18px; font-family: 'Courier New',Courier; font-size: 24px; color: #F0F0F0}
+.MathJax_MenuClose span {display: block; background-color: #AAA; border: 1.5px solid; border-radius: 18px; -webkit-border-radius: 18px; -moz-border-radius: 18px; -khtml-border-radius: 18px; line-height: 0; padding: 8px 0 6px}
+.MathJax_MenuClose:hover {color: white!important; border: 2px solid #CCC!important}
+.MathJax_MenuClose:hover span {background-color: #CCC!important}
+.MathJax_MenuClose:hover:focus {outline: none}
+</style><style type="text/css">.MathJax_Preview .MJXf-math {color: inherit!important}
+</style><style type="text/css">.MJX_Assistive_MathML {position: absolute!important; top: 0; left: 0; clip: rect(1px, 1px, 1px, 1px); padding: 1px 0 0 0!important; border: 0!important; height: 1px!important; width: 1px!important; overflow: hidden!important; display: block!important; -webkit-touch-callout: none; -webkit-user-select: none; -khtml-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none}
+.MJX_Assistive_MathML.MJX_Assistive_MathML_Block {width: 100%!important}
+</style><style type="text/css">#MathJax_Zoom {position: absolute; background-color: #F0F0F0; overflow: auto; display: block; z-index: 301; padding: .5em; border: 1px solid black; margin: 0; font-weight: normal; font-style: normal; text-align: left; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; -webkit-box-sizing: content-box; -moz-box-sizing: content-box; box-sizing: content-box; box-shadow: 5px 5px 15px #AAAAAA; -webkit-box-shadow: 5px 5px 15px #AAAAAA; -moz-box-shadow: 5px 5px 15px #AAAAAA; -khtml-box-shadow: 5px 5px 15px #AAAAAA; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+#MathJax_ZoomOverlay {position: absolute; left: 0; top: 0; z-index: 300; display: inline-block; width: 100%; height: 100%; border: 0; padding: 0; margin: 0; background-color: white; opacity: 0; filter: alpha(opacity=0)}
+#MathJax_ZoomFrame {position: relative; display: inline-block; height: 0; width: 0}
+#MathJax_ZoomEventTrap {position: absolute; left: 0; top: 0; z-index: 302; display: inline-block; border: 0; padding: 0; margin: 0; background-color: white; opacity: 0; filter: alpha(opacity=0)}
+</style><style type="text/css">.MathJax_Preview {color: #888; display: contents}
+#MathJax_Message {position: fixed; left: 1em; bottom: 1.5em; background-color: #E6E6E6; border: 1px solid #959595; margin: 0px; padding: 2px 8px; z-index: 102; color: black; font-size: 80%; width: auto; white-space: nowrap}
+#MathJax_MSIE_Frame {position: absolute; top: 0; left: 0; width: 0px; z-index: 101; border: 0px; margin: 0px; padding: 0px}
+.MathJax_Error {color: #CC0000; font-style: italic}
+</style><style type="text/css">.MJXp-script {font-size: .8em}
+.MJXp-right {-webkit-transform-origin: right; -moz-transform-origin: right; -ms-transform-origin: right; -o-transform-origin: right; transform-origin: right}
+.MJXp-bold {font-weight: bold}
+.MJXp-italic {font-style: italic}
+.MJXp-scr {font-family: MathJax_Script,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-frak {font-family: MathJax_Fraktur,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-sf {font-family: MathJax_SansSerif,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-cal {font-family: MathJax_Caligraphic,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-mono {font-family: MathJax_Typewriter,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-largeop {font-size: 150%}
+.MJXp-largeop.MJXp-int {vertical-align: -.2em}
+.MJXp-math {display: inline-block; line-height: 1.2; text-indent: 0; font-family: 'Times New Roman',Times,STIXGeneral,serif; white-space: nowrap; border-collapse: collapse}
+.MJXp-display {display: block; text-align: center; margin: 1em 0}
+.MJXp-math span {display: inline-block}
+.MJXp-box {display: block!important; text-align: center}
+.MJXp-box:after {content: " "}
+.MJXp-rule {display: block!important; margin-top: .1em}
+.MJXp-char {display: block!important}
+.MJXp-mo {margin: 0 .15em}
+.MJXp-mfrac {margin: 0 .125em; vertical-align: .25em}
+.MJXp-denom {display: inline-table!important; width: 100%}
+.MJXp-denom > * {display: table-row!important}
+.MJXp-surd {vertical-align: top}
+.MJXp-surd > * {display: block!important}
+.MJXp-script-box > *  {display: table!important; height: 50%}
+.MJXp-script-box > * > * {display: table-cell!important; vertical-align: top}
+.MJXp-script-box > *:last-child > * {vertical-align: bottom}
+.MJXp-script-box > * > * > * {display: block!important}
+.MJXp-mphantom {visibility: hidden}
+.MJXp-munderover, .MJXp-munder {display: inline-table!important}
+.MJXp-over {display: inline-block!important; text-align: center}
+.MJXp-over > * {display: block!important}
+.MJXp-munderover > *, .MJXp-munder > * {display: table-row!important}
+.MJXp-mtable {vertical-align: .25em; margin: 0 .125em}
+.MJXp-mtable > * {display: inline-table!important; vertical-align: middle}
+.MJXp-mtr {display: table-row!important}
+.MJXp-mtd {display: table-cell!important; text-align: center; padding: .5em 0 0 .5em}
+.MJXp-mtr > .MJXp-mtd:first-child {padding-left: 0}
+.MJXp-mtr:first-child > .MJXp-mtd {padding-top: 0}
+.MJXp-mlabeledtr {display: table-row!important}
+.MJXp-mlabeledtr > .MJXp-mtd:first-child {padding-left: 0}
+.MJXp-mlabeledtr:first-child > .MJXp-mtd {padding-top: 0}
+.MJXp-merror {background-color: #FFFF88; color: #CC0000; border: 1px solid #CC0000; padding: 1px 3px; font-style: normal; font-size: 90%}
+.MJXp-scale0 {-webkit-transform: scaleX(.0); -moz-transform: scaleX(.0); -ms-transform: scaleX(.0); -o-transform: scaleX(.0); transform: scaleX(.0)}
+.MJXp-scale1 {-webkit-transform: scaleX(.1); -moz-transform: scaleX(.1); -ms-transform: scaleX(.1); -o-transform: scaleX(.1); transform: scaleX(.1)}
+.MJXp-scale2 {-webkit-transform: scaleX(.2); -moz-transform: scaleX(.2); -ms-transform: scaleX(.2); -o-transform: scaleX(.2); transform: scaleX(.2)}
+.MJXp-scale3 {-webkit-transform: scaleX(.3); -moz-transform: scaleX(.3); -ms-transform: scaleX(.3); -o-transform: scaleX(.3); transform: scaleX(.3)}
+.MJXp-scale4 {-webkit-transform: scaleX(.4); -moz-transform: scaleX(.4); -ms-transform: scaleX(.4); -o-transform: scaleX(.4); transform: scaleX(.4)}
+.MJXp-scale5 {-webkit-transform: scaleX(.5); -moz-transform: scaleX(.5); -ms-transform: scaleX(.5); -o-transform: scaleX(.5); transform: scaleX(.5)}
+.MJXp-scale6 {-webkit-transform: scaleX(.6); -moz-transform: scaleX(.6); -ms-transform: scaleX(.6); -o-transform: scaleX(.6); transform: scaleX(.6)}
+.MJXp-scale7 {-webkit-transform: scaleX(.7); -moz-transform: scaleX(.7); -ms-transform: scaleX(.7); -o-transform: scaleX(.7); transform: scaleX(.7)}
+.MJXp-scale8 {-webkit-transform: scaleX(.8); -moz-transform: scaleX(.8); -ms-transform: scaleX(.8); -o-transform: scaleX(.8); transform: scaleX(.8)}
+.MJXp-scale9 {-webkit-transform: scaleX(.9); -moz-transform: scaleX(.9); -ms-transform: scaleX(.9); -o-transform: scaleX(.9); transform: scaleX(.9)}
+.MathJax_PHTML .noError {vertical-align: ; font-size: 90%; text-align: left; color: black; padding: 1px 3px; border: 1px solid}
+</style></head>
+<body><div id="MathJax_Message" style="display: none;"></div>
+  <div>
+    <div class="shiny-panel-conditional" data-display-if="!output.__reactivedoc__" data-ns-prefix="" style="display: none;">
+      <div id="rmd_loader_wrapper">
+        <div id="rmd_loader" style="">
+          <p>Please wait...</p>
+          <img src="./biola_files/rmd_loader.gif">
+        </div>
+      </div>
+    </div>
+    <div id="__reactivedoc__" class="shiny-html-output shiny-bound-output" aria-live="polite">
+
+
+
+
+
+
+
+
+<div class="container-fluid main-container">
+
+
+
+
+<div id="section-header">
+
+
+
+<h1 class="title toc-ignore">From Chaos to Clarity: Cleaning and
+Analyzing Dirty Restaurant Sales Data Using R</h1>
+<h4 class="author">Moshood A. Garuba</h4>
+<h4 class="date">2025-05-05</h4>
+
+</div>
+
+
+<div id="section-section-1---background" class="section level1">
+<h1>Section 1 - Background:</h1>
+<p>In the bustling world of restaurants, daily sales data is a
+goldmine—but only if it’s clean and structured. Unfortunately, real-life
+data is rarely pristine. Missing values, inconsistencies, and incomplete
+entries are the norm rather than the exception. This project tackles one
+such challenge using a “dirty” restaurant sales dataset containing
+17,534 transactions across starters, main dishes, desserts, drinks, and
+side dishes.</p>
+<div id="section-the-problem" class="section level2">
+<h2>The Problem:</h2>
+<p>The presence of dirt in data—such as missing categories, inconsistent
+entries, and incomplete transaction details—often makes analysis
+unreliable or impossible. Businesses that fail to clean and understand
+their data risk losing valuable insights that could improve operations,
+menu offerings, or customer satisfaction.</p>
+</div>
+<div id="section-data-strategy" class="section level2">
+<h2>Data Strategy:</h2>
+<ul>
+<li>Data Importation</li>
+<li>Data Cleaning</li>
+<li>Exploratory Data Analysis</li>
+<li>Statistical Modeling and Inference</li>
+</ul>
+</div>
+<div id="section-expected-outcome" class="section level2">
+<h2>Expected Outcome:</h2>
+<p>By the end of this project, the cleaned dataset will offer a reliable
+foundation for future analysis and modeling. Business insights—such as
+what items are most often paired, what times of day generate the most
+revenue, or what types of sales are prone to missing info—will be
+clearly visualized and discussed.</p>
+</div>
+</div>
+<div id="section-section-2---data-importation-and-loading-of-libraries" class="section level1">
+<h1>Section 2 - Data Importation and Loading of Libraries</h1>
+<pre class="r"><code class="hljs"><span class="hljs-comment"># Load required libraries</span>
+<span class="hljs-keyword">library</span>(tidyverse)
+<span class="hljs-keyword">library</span>(lubridate)
+<span class="hljs-keyword">library</span>(readr)
+<span class="hljs-keyword">library</span>(janitor)
+<span class="hljs-keyword">library</span>(dplyr)
+<span class="hljs-keyword">library</span>(kableExtra)
+<span class="hljs-keyword">library</span>(naniar)
+<span class="hljs-keyword">library</span>(lubridate)
+<span class="hljs-keyword">library</span>(dlookr)
+<span class="hljs-keyword">library</span>(patchwork)
+<span class="hljs-keyword">library</span>(gt)
+<span class="hljs-keyword">library</span>(summarytools)
+
+<span class="hljs-comment"># Loading your data</span>
+mydata &lt;- read.csv(<span class="hljs-string">"restaurant_sales_data.csv"</span>)
+
+<span class="hljs-comment">#checking the names of the variables</span>
+names(mydata)</code></pre>
+<pre><code class="hljs">## [1] "Order.ID"       "Customer.ID"    "Category"       "Item"          
+## [5] "Price"          "Quantity"       "Order.Total"    "Order.Date"    
+## [9] "Payment.Method"</code></pre>
+<pre class="r"><code class="hljs"><span class="hljs-comment">#Checking the variable structure</span>
+str(mydata)</code></pre>
+<pre><code class="hljs">## 'data.frame':    17534 obs. of  9 variables:
+##  $ Order.ID      : chr  "ORD_705844" "ORD_338528" "ORD_443849" "ORD_630508" ...
+##  $ Customer.ID   : chr  "CUST_092" "CUST_021" "CUST_029" "CUST_075" ...
+##  $ Category      : chr  "Side Dishes" "Side Dishes" "Main Dishes" "Drinks" ...
+##  $ Item          : chr  "Side Salad" "Mashed Potatoes" "Grilled Chicken" "" ...
+##  $ Price         : num  3 4 15 NA 12 18 4 15 6 14 ...
+##  $ Quantity      : num  1 3 4 2 4 5 5 3 2 5 ...
+##  $ Order.Total   : num  3 12 60 5 48 90 20 45 12 70 ...
+##  $ Order.Date    : chr  "2023-12-21" "2023-05-19" "2023-09-27" "2022-08-09" ...
+##  $ Payment.Method: chr  "Credit Card" "Digital Wallet" "Credit Card" "Credit Card" ...</code></pre>
+<pre class="r"><code class="hljs"><span class="hljs-comment"># Dimension</span>
+dim(mydata)</code></pre>
+<pre><code class="hljs">## [1] 17534     9</code></pre>
+<pre class="r"><code class="hljs"><span class="hljs-comment">#Checking the first few observations</span>
+head(mydata) %&gt;%  kable()</code></pre>
+<table class="table table-condensed">
+<colgroup>
+<col width="10%">
+<col width="11%">
+<col width="11%">
+<col width="15%">
+<col width="5%">
+<col width="8%">
+<col width="11%">
+<col width="10%">
+<col width="14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Order.ID</th>
+<th align="left">Customer.ID</th>
+<th align="left">Category</th>
+<th align="left">Item</th>
+<th align="right">Price</th>
+<th align="right">Quantity</th>
+<th align="right">Order.Total</th>
+<th align="left">Order.Date</th>
+<th align="left">Payment.Method</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">ORD_705844</td>
+<td align="left">CUST_092</td>
+<td align="left">Side Dishes</td>
+<td align="left">Side Salad</td>
+<td align="right">3</td>
+<td align="right">1</td>
+<td align="right">3</td>
+<td align="left">2023-12-21</td>
+<td align="left">Credit Card</td>
+</tr>
+<tr class="even">
+<td align="left">ORD_338528</td>
+<td align="left">CUST_021</td>
+<td align="left">Side Dishes</td>
+<td align="left">Mashed Potatoes</td>
+<td align="right">4</td>
+<td align="right">3</td>
+<td align="right">12</td>
+<td align="left">2023-05-19</td>
+<td align="left">Digital Wallet</td>
+</tr>
+<tr class="odd">
+<td align="left">ORD_443849</td>
+<td align="left">CUST_029</td>
+<td align="left">Main Dishes</td>
+<td align="left">Grilled Chicken</td>
+<td align="right">15</td>
+<td align="right">4</td>
+<td align="right">60</td>
+<td align="left">2023-09-27</td>
+<td align="left">Credit Card</td>
+</tr>
+<tr class="even">
+<td align="left">ORD_630508</td>
+<td align="left">CUST_075</td>
+<td align="left">Drinks</td>
+<td align="left"></td>
+<td align="right">NA</td>
+<td align="right">2</td>
+<td align="right">5</td>
+<td align="left">2022-08-09</td>
+<td align="left">Credit Card</td>
+</tr>
+<tr class="odd">
+<td align="left">ORD_648269</td>
+<td align="left">CUST_031</td>
+<td align="left">Main Dishes</td>
+<td align="left">Pasta Alfredo</td>
+<td align="right">12</td>
+<td align="right">4</td>
+<td align="right">48</td>
+<td align="left">2022-05-15</td>
+<td align="left">Cash</td>
+</tr>
+<tr class="even">
+<td align="left">ORD_381680</td>
+<td align="left">CUST_031</td>
+<td align="left">Main Dishes</td>
+<td align="left">Salmon</td>
+<td align="right">18</td>
+<td align="right">5</td>
+<td align="right">90</td>
+<td align="left">2022-07-20</td>
+<td align="left">Digital Wallet</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code class="hljs"><span class="hljs-comment">#Checking the last few observations</span>
+tail(mydata) %&gt;%  kable()</code></pre>
+<table style="width:100%;" class="table table-condensed">
+<colgroup>
+<col width="5%">
+<col width="10%">
+<col width="10%">
+<col width="10%">
+<col width="14%">
+<col width="5%">
+<col width="8%">
+<col width="10%">
+<col width="10%">
+<col width="13%">
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="left">Order.ID</th>
+<th align="left">Customer.ID</th>
+<th align="left">Category</th>
+<th align="left">Item</th>
+<th align="right">Price</th>
+<th align="right">Quantity</th>
+<th align="right">Order.Total</th>
+<th align="left">Order.Date</th>
+<th align="left">Payment.Method</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">17529</td>
+<td align="left">ORD_721774</td>
+<td align="left">CUST_006</td>
+<td align="left">Side Dishes</td>
+<td align="left">Mashed Potatoes</td>
+<td align="right">4</td>
+<td align="right">5</td>
+<td align="right">20</td>
+<td align="left">2022-04-22</td>
+<td align="left">Digital Wallet</td>
+</tr>
+<tr class="even">
+<td align="left">17530</td>
+<td align="left">ORD_320102</td>
+<td align="left">CUST_021</td>
+<td align="left">Drinks</td>
+<td align="left"></td>
+<td align="right">NA</td>
+<td align="right">4</td>
+<td align="right">4</td>
+<td align="left">2023-12-23</td>
+<td align="left">Cash</td>
+</tr>
+<tr class="odd">
+<td align="left">17531</td>
+<td align="left">ORD_974128</td>
+<td align="left">CUST_069</td>
+<td align="left">Desserts</td>
+<td align="left">Ice Cream</td>
+<td align="right">5</td>
+<td align="right">3</td>
+<td align="right">15</td>
+<td align="left">2023-12-18</td>
+<td align="left">Cash</td>
+</tr>
+<tr class="even">
+<td align="left">17532</td>
+<td align="left">ORD_108324</td>
+<td align="left">CUST_050</td>
+<td align="left">Desserts</td>
+<td align="left">Ice Cream</td>
+<td align="right">5</td>
+<td align="right">4</td>
+<td align="right">20</td>
+<td align="left">2022-05-20</td>
+<td align="left">Digital Wallet</td>
+</tr>
+<tr class="odd">
+<td align="left">17533</td>
+<td align="left">ORD_612647</td>
+<td align="left">CUST_073</td>
+<td align="left">Side Dishes</td>
+<td align="left">Mashed Potatoes</td>
+<td align="right">4</td>
+<td align="right">2</td>
+<td align="right">8</td>
+<td align="left">2022-01-27</td>
+<td align="left">Digital Wallet</td>
+</tr>
+<tr class="even">
+<td align="left">17534</td>
+<td align="left">ORD_680707</td>
+<td align="left">CUST_006</td>
+<td align="left">Desserts</td>
+<td align="left"></td>
+<td align="right">7</td>
+<td align="right">4</td>
+<td align="right">28</td>
+<td align="left">2023-01-07</td>
+<td align="left"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="section-section-34---data-cleaning-cleaningtidying-and-transforming" class="section level1">
+<h1>Section 3/4 - Data Cleaning (Cleaning/Tidying and
+Transforming):</h1>
+<pre class="r"><code class="hljs">mydata %&gt;%
+  gg_miss_var()+
+  labs(title = <span class="hljs-string">"Visaulization of the Missing variable"</span>)</code></pre>
+<p><img src="./biola_files/unnamed-chunk-2-1.png" width="672"></p>
+<pre class="r"><code class="hljs">sum(!complete.cases(mydata) == <span class="hljs-literal">T</span>)</code></pre>
+<pre><code class="hljs">## [1] 876</code></pre>
+<p><strong>876 observations</strong> are missing in the dataset. We need
+to check the pattern of missing and develop a strategy for adjusting the
+missingness either by omition or imputation method using some machine
+learning algorithms.</p>
+<pre class="r"><code class="hljs">plot_na_pareto(mydata)</code></pre>
+<p><img src="./biola_files/unnamed-chunk-3-1.png" width="672"></p>
+<p><strong>Observations:</strong> From the Pareto na missing chart is
+show that the missing is fair and we can impute and fill the missing
+observations using machine learning algorithms called <strong>Predictive
+mean matching</strong>.</p>
+<pre class="r"><code class="hljs"><span class="hljs-comment"># Step 1: Perform multiple imputation</span>
+imputed_data &lt;- mice::mice(mydata, method = <span class="hljs-string">"pmm"</span>)</code></pre>
+<pre><code class="hljs">## 
+##  iter imp variable
+##   1   1  Price  Quantity  Order.Total
+##   1   2  Price  Quantity  Order.Total
+##   1   3  Price  Quantity  Order.Total
+##   1   4  Price  Quantity  Order.Total
+##   1   5  Price  Quantity  Order.Total
+##   2   1  Price  Quantity  Order.Total
+##   2   2  Price  Quantity  Order.Total
+##   2   3  Price  Quantity  Order.Total
+##   2   4  Price  Quantity  Order.Total
+##   2   5  Price  Quantity  Order.Total
+##   3   1  Price  Quantity  Order.Total
+##   3   2  Price  Quantity  Order.Total
+##   3   3  Price  Quantity  Order.Total
+##   3   4  Price  Quantity  Order.Total
+##   3   5  Price  Quantity  Order.Total
+##   4   1  Price  Quantity  Order.Total
+##   4   2  Price  Quantity  Order.Total
+##   4   3  Price  Quantity  Order.Total
+##   4   4  Price  Quantity  Order.Total
+##   4   5  Price  Quantity  Order.Total
+##   5   1  Price  Quantity  Order.Total
+##   5   2  Price  Quantity  Order.Total
+##   5   3  Price  Quantity  Order.Total
+##   5   4  Price  Quantity  Order.Total
+##   5   5  Price  Quantity  Order.Total</code></pre>
+<pre class="r"><code class="hljs"><span class="hljs-comment"># Step 2: Extract the completed dataset (e.g., first imputation)</span>
+clean_data &lt;- mice::complete(imputed_data, <span class="hljs-number">1</span>)
+
+dim(clean_data)</code></pre>
+<pre><code class="hljs">## [1] 17534     9</code></pre>
+<pre class="r"><code class="hljs">gg_miss_var(clean_data)+
+  labs(title = <span class="hljs-string">"Visaulization of the Missing variable after Imputation"</span>)</code></pre>
+<p><img src="./biola_files/unnamed-chunk-4-1.png" width="672"></p>
+<p><strong>Observation:</strong> The only data problem is missing
+observation which has been corrected using <strong>Predictive mean
+matching techniques</strong> embended in <code>mice()</code> function
+and mice package.</p>
+</div>
+<div id="section-section-5-data-analysis-visualizing-and-summarizing" class="section level1">
+<h1>Section 5: Data Analysis (Visualizing and summarizing):</h1>
+<div id="section-univariate-analysis" class="section level2">
+<h2>Univariate analysis:</h2>
+<div id="section-distribution-of-order-totals" class="section level3">
+<h3>1. Distribution of Order Totals</h3>
+<pre class="r"><code class="hljs">ggplot(clean_data, aes(x = Order.Total)) +
+  geom_histogram(binwidth = <span class="hljs-number">5</span>, fill = <span class="hljs-string">"steelblue"</span>, color = <span class="hljs-string">"white"</span>) +
+  labs(title = <span class="hljs-string">"Distribution of Order Totals"</span>, x = <span class="hljs-string">"Order Total"</span>, y = <span class="hljs-string">"Count"</span>) +
+  theme_minimal()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-5-1.png" width="672"></p>
+</div>
+<div id="section-frequency-of-payment-methods" class="section level3">
+<h3>2. Frequency of Payment Methods</h3>
+<pre class="r"><code class="hljs">ggplot(clean_data, aes(x = Payment.Method)) +
+  geom_bar(fill = <span class="hljs-string">"darkcyan"</span>) +
+  labs(title = <span class="hljs-string">"Frequency of Payment Methods"</span>, x = <span class="hljs-string">"Payment Method"</span>, y = <span class="hljs-string">"Count"</span>) +
+  theme_minimal()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-6-1.png" width="672"></p>
+</div>
+<div id="section-frequency-of-item-categories" class="section level3">
+<h3>3. Frequency of Item Categories</h3>
+<pre class="r"><code class="hljs">ggplot(clean_data, aes(x = reorder(Category, Category, <span class="hljs-keyword">function</span>(x)-length(x)))) +
+  geom_bar(fill = <span class="hljs-string">"orange"</span>) +
+  labs(title = <span class="hljs-string">"Item Category Frequency"</span>, x = <span class="hljs-string">"Category"</span>, y = <span class="hljs-string">"Count"</span>) +
+  theme_minimal() +
+  coord_flip()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-7-1.png" width="672"></p>
+</div>
+</div>
+<div id="section-univariate-analysis-1" class="section level2">
+<h2>Univariate Analysis</h2>
+<div id="section-average-order-total-by-payment-method" class="section level3">
+<h3>1. Average Order Total by Payment Method</h3>
+<pre class="r"><code class="hljs">clean_data %&gt;%
+  group_by(Payment.Method) %&gt;%
+  summarise(Avg.Order.Total = mean(Order.Total, na.rm = <span class="hljs-literal">TRUE</span>)) %&gt;%
+  ggplot(aes(x = reorder(Payment.Method, Avg.Order.Total), y = Avg.Order.Total)) +
+  geom_col(fill = <span class="hljs-string">"forestgreen"</span>) +
+  labs(title = <span class="hljs-string">"Average Order Total by Payment Method"</span>, x = <span class="hljs-string">"Payment Method"</span>, y = <span class="hljs-string">"Average Total"</span>) +
+  theme_minimal()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-8-1.png" width="672"></p>
+</div>
+<div id="section-boxplot-of-price-by-category" class="section level3">
+<h3>2. Boxplot of Price by Category</h3>
+<pre class="r"><code class="hljs">ggplot(clean_data, aes(x = Category, y = Price)) +
+  geom_boxplot(fill = <span class="hljs-string">"plum"</span>) +
+  labs(title = <span class="hljs-string">"Price by Category"</span>, x = <span class="hljs-string">"Category"</span>, y = <span class="hljs-string">"Price"</span>) +
+  theme_minimal() +
+  coord_flip()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-9-1.png" width="672"></p>
+</div>
+<div id="section-relationship-between-quantity-and-order-total" class="section level3">
+<h3>3. Relationship between Quantity and Order Total</h3>
+<pre class="r"><code class="hljs">ggplot(clean_data, aes(x = Quantity, y = Order.Total)) +
+  geom_point(alpha = <span class="hljs-number">0.4</span>, color = <span class="hljs-string">"blue"</span>) +
+  geom_smooth(method = <span class="hljs-string">"lm"</span>, se = <span class="hljs-literal">FALSE</span>, color = <span class="hljs-string">"red"</span>) +
+  labs(title = <span class="hljs-string">"Quantity vs Order Total"</span>, x = <span class="hljs-string">"Quantity"</span>, y = <span class="hljs-string">"Order Total"</span>) +
+  theme_minimal()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-10-1.png" width="672"></p>
+</div>
+<div id="section-total-revenue-by-category" class="section level3">
+<h3>4. Total Revenue by Category</h3>
+<pre class="r"><code class="hljs">clean_data %&gt;%
+  group_by(Category) %&gt;%
+  summarise(Total.Revenue = sum(Order.Total, na.rm = <span class="hljs-literal">TRUE</span>)) %&gt;%
+  ggplot(aes(x = reorder(Category, Total.Revenue), y = Total.Revenue)) +
+  geom_col(fill = <span class="hljs-string">"darkorange"</span>) +
+  labs(title = <span class="hljs-string">"Total Revenue by Category"</span>, x = <span class="hljs-string">"Category"</span>, y = <span class="hljs-string">"Revenue"</span>) +
+  theme_minimal() +
+  coord_flip()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-11-1.png" width="672"></p>
+</div>
+</div>
+</div>
+<div id="section-statistical-modeling-and-inference" class="section level1">
+<h1>Statistical Modeling and Inference</h1>
+<pre class="r"><code class="hljs">clean_data %&gt;% 
+  ggplot(aes(x = Price, y = Order.Total))+
+  geom_point(aes(colour = Payment.Method))+
+  labs(title = <span class="hljs-string">"Correlational Plot"</span>, y = <span class="hljs-string">"Total Order"</span>)+
+  theme_minimal()</code></pre>
+<p><img src="./biola_files/unnamed-chunk-12-1.png" width="672"></p>
+<pre class="r"><code class="hljs">model&lt;-lm(Order.Total~Price, data = clean_data)
+
+summary(model)</code></pre>
+<pre><code class="hljs">## 
+## Call:
+## lm(formula = Order.Total ~ Price, data = clean_data)
+## 
+## Residuals:
+##     Min      1Q  Median      3Q     Max 
+## -40.272  -5.934   0.026   5.076  39.728 
+## 
+## Coefficients:
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept) -0.12522    0.14876  -0.842      0.4    
+## Price        3.01987    0.01813 166.534   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 11.68 on 17532 degrees of freedom
+## Multiple R-squared:  0.6127, Adjusted R-squared:  0.6127 
+## F-statistic: 2.773e+04 on 1 and 17532 DF,  p-value: &lt; 2.2e-16</code></pre>
+<p>A linear regression model was fitted using ordinary least squares
+(OLS) to predict <code>Order.Total</code> based on <code>Price</code>.
+The model revealed a statistically significant and substantial
+relationship, explaining 62% of the variance in order totals (<strong>R²
+= 0.62</strong>, <em>F</em>(1, 17,532) = 28,132.81, <em>p</em> &lt;
+.001). The intercept of the model was -0.23 (95% CI [-0.52, 0.07]),
+which was not statistically significant (<em>t</em> = -1.52, <em>p</em>
+= 0.128), indicating no meaningful prediction when price is zero.
+However, the effect of <code>Price</code> was highly significant and
+positive (<strong>β = 3.05</strong>, 95% CI [3.01, 3.08], <em>t</em> =
+167.73, <em>p</em> &lt; .001), with a standardized beta of
+<strong>0.78</strong> (95% CI [0.78, 0.79]), suggesting that higher
+prices are strongly associated with higher order totals. Overall, the
+model demonstrates that price is a strong and reliable predictor of
+total sales.</p>
+</div>
+<div id="section-shinny-app" class="section level1">
+<h1>Shinny App</h1>
+<p>I developed a simple interactive dashboard to monitor restaurant
+order data, showcasing key metrics such as total sales, number of
+orders, and average order value. Incorporated visual summaries using
+sales trends over time, providing actionable insights for operations and
+decision-making.</p>
+<pre class="r"><code class="hljs"><span class="hljs-keyword">library</span>(shiny)
+<span class="hljs-keyword">library</span>(ggplot2)
+<span class="hljs-keyword">library</span>(dplyr)
+
+<span class="hljs-comment"># UI</span>
+ui &lt;- fluidPage(
+  titlePanel(<span class="hljs-string">"Simple Order Dashboard"</span>),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput(<span class="hljs-string">"category"</span>, <span class="hljs-string">"Category:"</span>,
+                  choices = c(<span class="hljs-string">"All"</span>, unique(clean_data$Category))),
+      selectInput(<span class="hljs-string">"payment"</span>, <span class="hljs-string">"Payment Method:"</span>,
+                  choices = c(<span class="hljs-string">"All"</span>, unique(clean_data$`Payment.Method`)))
+    ),
+    
+    mainPanel(
+      tableOutput(<span class="hljs-string">"dataTable"</span>),
+      plotOutput(<span class="hljs-string">"salesPlot"</span>)
+    )
+  )
+)
+
+<span class="hljs-comment"># Server</span>
+server &lt;- <span class="hljs-keyword">function</span>(input, output) {
+  
+  filteredData &lt;- reactive({
+    data &lt;- clean_data
+    data$Order.Date &lt;- as.Date(data$Order.Date)
+    
+    <span class="hljs-keyword">if</span> (input$category != <span class="hljs-string">"All"</span>) {
+      data &lt;- data[data$Category == input$category, ]
+    }
+    <span class="hljs-keyword">if</span> (input$payment != <span class="hljs-string">"All"</span>) {
+      data &lt;- data[data$`Payment.Method` == input$payment, ]
+    }
+    
+    data
+  })
+  
+  output$dataTable &lt;- renderTable({
+    head(filteredData(), <span class="hljs-number">20</span>)  <span class="hljs-comment"># Show only first 20 rows for simplicity</span>
+  })
+  
+  output$salesPlot &lt;- renderPlot({
+    df &lt;- filteredData() %&gt;%
+      group_by(Order.Date) %&gt;%
+      summarise(Total = sum(Order.Total, na.rm = <span class="hljs-literal">TRUE</span>))
+    
+    ggplot(df, aes(x = Order.Date, y = Total)) +
+      geom_line(color = <span class="hljs-string">"blue"</span>) +
+      labs(title = <span class="hljs-string">"Total Sales Over Time"</span>, x = <span class="hljs-string">"Date"</span>, y = <span class="hljs-string">"Sales ($)"</span>)
+  })
+}
+
+<span class="hljs-comment"># Run the app</span>
+shinyApp(ui = ui, server = server)</code></pre>
+<iframe width="100%" height="400" class="shiny-frame" src="./biola_files/saved_resource.html"></iframe>
+</div>
+
+
+
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("section-TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "mathjax-local/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+
+</div>
+  </div>
+
+
+<div id="shiny-disconnected-overlay"></div></body></html>

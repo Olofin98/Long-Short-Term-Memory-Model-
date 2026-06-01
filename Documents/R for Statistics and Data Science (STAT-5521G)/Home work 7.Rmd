@@ -1,0 +1,68 @@
+---
+title: "Homework 7"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1 
+Using the mtcars dataset, are cars with automatic or manual transmission more fuel efficient? Support your answer numerically and visually using tidyverse and ggplot tools.
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+
+# Load mtcars dataset
+data(mtcars)
+
+# Convert 'am' variable to a factor (0 = Automatic, 1 = Manual)
+mtcars <- mtcars %>%
+  mutate(am = factor(am, labels = c("Automatic", "Manual")))
+
+# Summarize fuel efficiency by transmission type
+summary_mpg <- mtcars %>%
+  group_by(am) %>%
+  summarise(
+    mean_mpg = mean(mpg, na.rm = TRUE),
+    median_mpg = median(mpg, na.rm = TRUE),
+    sd_mpg = sd(mpg, na.rm = TRUE),
+    count = n()
+  )
+
+print(summary_mpg)
+
+# Visualizing the comparison
+ggplot(mtcars, aes(x = am, y = mpg, fill = am)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  labs(title = "Fuel Efficiency (MPG) by Transmission Type",
+       x = "Transmission Type",
+       y = "Miles Per Gallon (MPG)") +
+  theme_minimal() +
+  scale_fill_manual(values = c("blue", "red"))
+```
+
+The visualization indicates that manual transmission cars are more fuel-efficient than automatic transmission cars. The median miles per gallon (MPG) for manual cars is higher, and they exhibit a wider interquartile range (IQR), with several values exceeding 25 MPG. In contrast, automatic cars have a lower median MPG and tend to cluster around the 15-20 MPG range. The data also shows that automatic cars have more values concentrated at the lower end of the MPG spectrum. Overall, the analysis suggests that manual transmission cars offer better fuel efficiency.
+
+
+## Using Numerically and Hypothetically support to the claim.
+
+ **Null Hypothesis (H₀):** There is no significant difference in mean fuel efficiency between automatic and manual transmission cars.
+ 
+**Alternative Hypothesis (H₁):** Cars with manual transmisio is significantly more fuel efficiency compared to automatic transmission cars.
+
+```{r}
+# Perform a t-test to check statistical significance
+t_test_result <- t.test(mpg ~ am, data = mtcars, alternative = "less")
+print(t_test_result)
+```
+
+Since the **p-value is less than 0.05**, we have sufficient evidence to reject the null hypothesis. This suggests that there is a statistically significant difference in fuel efficiency between manual and automatic transmission cars. Specifically, cars with manual transmission are significantly more fuel-efficient compared to automatic transmission cars.

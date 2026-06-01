@@ -12,9 +12,16 @@ always_allow_html: true
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Loading of packages
+## 1. Project Motivation (Developer Perspective)
 
-```{r}
+This project was developed to explore how modern deep learning models can be applied to real-world epidemiological time-series data in settings where data are limited, noisy, and highly non-linear. While traditional statistical models such as ARIMA are widely used in disease forecasting, they impose linearity and stationarity assumptions that may not fully capture the evolving dynamics of epidemics.
+
+The goal of this project was not to replace classical models, but to investigate whether a lightweight, interpretable Long Short-Term Memory (LSTM) architecture could learn temporal dependencies in monthly HIV prevalence data and produce stable short-term forecasts under minimal modeling assumptions.
+
+This repository focuses on implementation, reproducibility, and practical modeling decisions, rather than theoretical exposition.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+## Loading of packages
 library(readxl)
 library(readr)
 library(keras)
@@ -34,14 +41,27 @@ library(abind)
 library(patchwork)
 ```
 
+## 2. Data Characteristics and Practical Challenges
 
-## Import Dataset
+The dataset consists of monthly HIV prevalence observations spanning 2010–2021 from a single hospital catchment area. From a modeling standpoint, the data present several challenges:
 
-```{r}
+- Limited sample size relative to deep learning standards
+- Strong temporal dependence with irregular fluctuations
+- Potential non-stationarity and changing variance over time
+- Absence of exogenous covariates (purely univariate setting)
+
+These constraints motivated the use of:
+- simple model architecture,
+- strict chronological splitting,
+- stateful sequence learning,
+- and careful reconstruction of forecasts.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 HiV_data <- read_xlsx("Hivdata.xlsx")
 ```
 
-## Data Cleaning, Feature Engineering and Basics Statistics
+## 3. Data Cleaning, Feature Engineering and Basics Statistics
+This preprocessing stage focuses on transforming raw hospital records into a temporally consistent time-series structure. Missing year values are resolved through directional imputation, month labels are standardized, and a unified date index is constructed to support chronological modeling. Basic descriptive summaries are computed to characterize annual prevalence patterns prior to forecasting.
 
 ```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
 
@@ -77,7 +97,8 @@ max_year <- df_sum %>%
 ```
 
 
-## Data Visulization
+## 4. Data Visulization
+This section presents exploratory visualizations used to examine temporal patterns, variability, and trends in HIV prevalence prior to modeling. The plots provide intuitive insights into monthly and yearly fluctuations, highlight potential seasonal effects, and support validation of preprocessing steps by revealing structural characteristics of the time series.
 
 ```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
 
@@ -157,8 +178,90 @@ ggsave(
 )
 ```
 
+![Annual Aggregation of HIV Prevalence for Temporal Modeling.](p1.png){width=70%}
 
-## Long Short-Term Memory Modeling
+
+![Temporal Dynamics of Monthly HIV Prevalence](p2.png){width=70%}
+
+
+![Temporal Trajectory of HIV Prevalence (2010–2021)](p3.png){width=70%}
+
+## 5. Long Short-Term Memory Modeling
+
+## Long Short-Term Memory (LSTM)
+
+Long Short-Term Memory (LSTM) networks are a gated form of recurrent neural networks (RNNs) designed to model sequential data by retaining important information over time while selectively forgetting irrelevant patterns. This makes LSTMs suitable for epidemic time-series forecasting, where both short-term fluctuations and longer-term dependencies may influence current prevalence.
+
+At each time step \(t\), given the input \(x_t\), previous hidden state \(h_{t-1}\), and previous cell state \(C_{t-1}\), the LSTM updates are:
+
+**Forget gate**
+\[
+f_t = \sigma\!\left(W_f [h_{t-1}, x_t] + b_f \right)
+\]
+
+**Input gate**
+\[
+i_t = \sigma\!\left(W_i [h_{t-1}, x_t] + b_i \right)
+\]
+
+**Candidate cell state**
+\[
+\tilde{C}_t = \tanh\!\left(W_C [h_{t-1}, x_t] + b_C \right)
+\]
+
+**Cell state update**
+\[
+C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t
+\]
+
+**Output gate**
+\[
+o_t = \sigma\!\left(W_o [h_{t-1}, x_t] + b_o \right)
+\]
+
+**Hidden state**
+\[
+h_t = o_t \odot \tanh(C_t)
+\]
+
+where \(\sigma(\cdot)\) is the sigmoid activation function, \(\tanh(\cdot)\) is the hyperbolic tangent, and \(\odot\) denotes element-wise multiplication.
+
+## 6. Data Transformation and Parameter Estimation
+
+Prior to model training, the HIV prevalence time series was transformed to improve numerical stability and facilitate temporal learning. Since raw epidemiological series often exhibit trends and non-stationary behavior, first-order differencing was applied to remove long-term drift and stabilize the mean:
+
+\[
+y'_t = y_t - y_{t-1}
+\]
+
+where \(y_t\) denotes the observed HIV prevalence at time \(t\) and \(y'_t\) represents the differenced series. The transformed series was then reformulated into a supervised learning structure using a one-step lag, such that the input–output pairs are defined as:
+
+\[
+x_t = y'_{t-1}, \quad y_t = y'_t
+\]
+
+To ensure compatibility with the nonlinear activation functions used in LSTM networks, the input data were scaled to the interval \([-1, 1]\) using min–max normalization based on training-set statistics:
+
+\[
+x_t^{(s)} = 2 \times \frac{x_t - x_{\min}}{x_{\max} - x_{\min}} - 1
+\]
+
+All scaling parameters were estimated exclusively from the training data to prevent information leakage and were later used to invert the transformation during forecast reconstruction.
+
+Model parameters were estimated by minimizing the mean squared error (MSE) loss function:
+
+\[
+\mathcal{L}(\theta) = \frac{1}{N} \sum_{t=1}^{N} (y_t - \hat{y}_t)^2
+\]
+
+Optimization was performed using the Adam algorithm, which adaptively updates model weights based on first- and second-order moments of the gradients. Gradients were computed through backpropagation through time (BPTT), allowing the network to learn temporal dependencies across sequential observations. Parameter updates were iteratively refined over multiple epochs until convergence criteria were satisfied.
+
+### Model Configuration
+
+The forecasting model was implemented using a lightweight univariate Long Short-Term Memory (LSTM) architecture designed to balance expressive capacity and generalization. The network consists of a single input feature, one LSTM layer with eight hidden units, and a fully connected dense output layer for one-step-ahead prediction.
+
+A stateful training configuration was adopted to preserve temporal continuity across sequential observations, with a batch size of one. The model was trained for 50 epochs using the Adam optimizer with a learning rate of 0.001 and mean squared error (MSE) as the loss function. This configuration emphasizes stable learning dynamics and reduces overfitting risk given the limited size of the time series.
+
 
 ```{r}
 # --- Reproducibility ---
@@ -328,10 +431,6 @@ model <- keras_model_sequential() %>%
 
 ### compile
 ```{r}
-# --- Reproducibility ---
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
 model %>% compile(
   loss = "mse",
   optimizer = optimizer_adam(learning_rate = 0.001),
@@ -346,10 +445,6 @@ summary(model)
 ### Fit the model
 
 ```{r}
-# --- Reproducibility ---
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
 epochs <- 50
 
 for (e in 1:epochs) {
@@ -369,11 +464,6 @@ for (e in 1:epochs) {
 ##Prediction
 
 ```{r}
-# --- Reproducibility ---
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
-
 # =========================
 # Predict (train & test)
 # =========================
@@ -399,28 +489,42 @@ y_test_true  <- inv_scale(y_test,  Scaled$scaler, c(-1, 1))
 
 ```
 
-## Matrices Evaluation
+## Model Performance
+
+
 ```{r}
-# Evaluate
 rmse <- function(a, b) sqrt(mean((a - b)^2))
 mae  <- function(a, b) mean(abs(a - b))
 
-cat(sprintf("Train RMSE: %.4f | MAE: %.4f\n",
-            rmse(y_train_true, y_train_hat),
-            mae(y_train_true,  y_train_hat)))
-cat(sprintf("Test  RMSE: %.4f | MAE: %.4f\n",
-            rmse(y_test_true,  y_test_hat),
-            mae(y_test_true,   y_test_hat)))
+results <- data.frame(
+  Dataset = c("Train", "Test"),
+  RMSE = c(
+    rmse(y_train_true, y_train_hat),
+    rmse(y_test_true,  y_test_hat)
+  ),
+  MAE = c(
+    mae(y_train_true, y_train_hat),
+    mae(y_test_true,  y_test_hat)
+  )
+)
+
+# Optional: round for presentation
+results$RMSE <- round(results$RMSE, 4)
+results$MAE  <- round(results$MAE,  4)
+
+library(knitr)
+
+knitr::kable(
+  results,
+  caption = "Model performance metrics on training and test sets",
+  align = "lcc"
+)
 
 ```
 
+Model performance was evaluated using Root Mean Squared Error (RMSE) and Mean Absolute Error (MAE) on both the training and test sets. The LSTM model achieved an RMSE of 5.83 and an MAE of 4.71 on the training data, while lower error values were observed on the test data (RMSE = 3.67, MAE = 2.92). The comparable—and slightly improved—performance on the test set suggests good generalization and limited overfitting, indicating that the model learned stable temporal patterns rather than memorizing the training sequence.
 
-```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
-
-# --- Reproducibility ---
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
+```{r fig.height=7, fig.width=10, message=FALSE, warning=FALSE, include=FALSE, out.width="100%"}
 # Quick plots
 
 op <- par(mfrow = c(1,2))
@@ -442,10 +546,6 @@ par(op)
 
 
 ```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
-# --- Reproducibility ---
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
 # ---- Prepare training dataframe ----
 df_train <- data.frame(
   Index = 1:length(y_train_true),
@@ -493,10 +593,6 @@ df_test <- data.frame(
 
 
 ```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
-# --- Reproducibility ---
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
 invert_scaling <- function(z_scaled, scaler, feature_range = c(-1, 1)) {
   fr_min <- feature_range[1]
   fr_max <- feature_range[2]

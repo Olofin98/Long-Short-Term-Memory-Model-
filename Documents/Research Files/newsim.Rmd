@@ -1,0 +1,3529 @@
+---
+title: "Mechanistic Modeling"
+author: "Olofin Daniel"
+date: "2025-07-11"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+# Libraries
+library(RMariaDB)
+library(DBI)
+library(tidyverse)
+library(dplyr)  
+library(pheatmap)
+library(ggplot2)
+library(reshape2)
+library(lme4)     # for linear mixed models
+library(lmerTest) # for p-values in lmer
+library(emmeans)  # for posthoc comparisons
+library(ggflowchart)
+library(car)
+library(sjPlot)
+library(webshot)
+library(stargazer)
+library(factoextra)
+library(FactoMineR)
+library(vegan)
+library(gridExtra)
+library(patchwork)
+library(grid)
+library(vegan)
+library(broom)
+library(tibble)
+library(ggpubr)
+library(knitr)
+library(kableExtra)
+library(glue)
+library(xtable)
+```
+
+# SNU-668
+```{r include=FALSE}
+
+db <- dbConnect(MariaDB(), dbname="CLONEID", 
+                host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com", 
+                user="danielolofin",
+                  password="Karyotyping_Analysis")
+
+query <- "SELECT id, passaged_from_id1, passage, event, date, media from Passaging WHERE passaged_from_id1"
+mismatches <- dbGetQuery(db, query)
+
+```
+
+```{r include=FALSE}
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+
+```
+
+```{r include=FALSE}
+dbListFields(db,"Perspective") ##karyotype data is in here.
+```
+
+```{r include=FALSE}
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+```
+
+```{r include=FALSE}
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+```
+
+
+
+```{r include=FALSE}
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the 
+## passaging table.
+
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+```
+
+```{r include=FALSE}
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+```
+
+
+```{r include=FALSE}
+# Define origins and build query
+origins <- c(
+  "SNU-668_R1_A55_seedT1", "SNU-668_R3_A55_seedT1", "SNU-668_K1_A34_seedT1",
+  "SNU-668_K2_A34_seedT1", "SNU-668_K3_A34_seedT1", "HGC-27_RevG_A9-F_seed",
+  "HGC-27_RevG2_A7-F_seed", "SNU-668_G1_A4_seed", "SNU-668_G2_A4_seed",
+  "HGC-27_RevC_A45_seed", "SNU-668_RevG_A3_seed", "SNU-668_P2_A18k_seed",
+  "SNU-668_P0_A11K_seed", "SNU-668_r2_A55_seedT1", "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed", "SNU-668_RevG_A10_seed", "HGC-27_G1_A9-F_seed",
+  "HGC-27_G2_A9_harvesT155", "HGC-27_G2_A9-F_seed", "HGC-27_G1_A9_harvesT155",
+  "HGC-27_RevG_A9_harvesT149", "HGC-27_RevG2_A8_seed", "MDA-MB-231_P_A2_harvest",
+  "HGC-27_C_A45_seed", "SNU-668_RevC_A27_seed", "SNU-668_C_A24_seed",
+  "SNU-668_C_A4_seed", "SNU-668_RevC_A3_seed", "MDA-MB-231_RPMI_A12_VT2_seed",
+  "SNU-668_P1_A18K_seed", "SNU-668_O1_A3_exp_seedT4", "SNU-668_O2_A3_exp_seedT4",
+  "HGC-27_P1_A18K_harvest", "HGC-27_P2_A18K_harvest", "SUM159_NLS_4N_O1_A7K_harvest",
+  "SUM159_NLS_2N_O1_A7K_harvest", "SUM-159_NLS_4N_A5M_K_harvest",
+  "SUM159_NLS_4N_O2_A7K_harvest", "SUM159_NLS_2N_O2_A7K_harvest",
+  "SUM-159_NLS_2N_A7M_K_harvest"
+)
+
+
+## Passaging table
+q <- paste0("SELECT * FROM Passaging")
+rs <- dbSendQuery(db, q)
+res_passage <- dbFetch(rs)
+dbClearResult(rs)
+
+names(res_passage)[1] <- "replicate_id"
+
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+ q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+
+
+# Fetch data from the database
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+```
+
+
+
+```{r include=FALSE}
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+
+
+res$treatment_group <- case_when(
+  grepl("_G1|_G2", res$origin) ~ "Glucose",
+  grepl("_K1|_K2|_K3|_K", res$origin) ~ "K_Condition",
+  grepl("_P1|_P2|_P0|_P", res$origin) ~ "Phosphate",
+  grepl("_R1|_R2|_R3|_r2", res$origin) ~ "R_Condition",
+  grepl("_O1|_O2", res$origin) ~ "Oxygen",
+  grepl("_RevC", res$origin) ~ "Reversine_Control",
+  grepl("_RevG|_RevG2", res$origin) ~ "Reversine_Glucose",
+  grepl("_C", res$origin) ~ "Control",
+  grepl("_RPMI", res$origin) ~ "RPMI",
+  TRUE ~ NA_character_
+)
+
+
+# Seperating SNU_168 by number of their chomosome
+res %>% 
+    mutate(sampleSource = ifelse(str_detect(alias, "N4") & sampleSource == "SUM-159",
+                               "SUM-159-4N",
+                               sampleSource)) -> res
+
+
+
+
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$cloneID <- res$cloneID
+karyo_df$line<- res$sampleSource
+karyo_df$replicate_id<- res$origin
+
+unique(karyo_df$replicate_id)
+
+
+write.csv(karyo_df, file = "kary_df.csv")
+write.csv(res_passage, file = "pass_date")
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# Joining the passaging data 
+joined_data <- left_join(karyo_df, res_passage, by = "replicate_id")
+
+
+# Creating a new data set for SNU_668
+joined_data %>% 
+  filter(cellLine == "SNU-668" & treatment == "Control") -> SNU_668
+
+round(SNU_668$date[33] %--% SNU_668$date[1]/months(1))
+```
+
+# Theoretical Framework
+
+**Objective**:  
+To model the evolution of chromosomal copy number profiles in cancer cell lines under different conditions, including Control, Glucose 1, and Glucose 2.
+
+**Approach**:  
+Use of a discrete-time stochastic process to simulate karyotypic changes over time, with the goal of reproducing late-phase experimental profiles by adjusting chromosome-level gain and loss probabilities.
+
+
+
+## Methods
+
+### Simulation Design
+- The simulation framework was implemented using a discrete-time Markovian model that allows for chromosomal gain and loss events.
+- Starting state: cell-level karyotypes were obtained from early-phase profiles for each condition:
+  - Control: `SNU-668_C_A4_seed`
+  - Glucose 1: `SNU-668_G1_A4_seed`
+  - Glucose 2: `SNU-668_G2_A4_seed`
+- Each simulation tracked 22 autosomal chromosomes across \( N = 1000 \) virtual cells per replicate.
+- Simulations evolved over 10 discrete time steps, approximately corresponding to 4 months of cell culture.
+
+### Transition Probabilities
+Let:
+- \( C_{i,t} \) be the copy number of chromosome \( i \) at time \( t \),
+- \( P_g \) be the probability of gaining a chromosome = \( P_l \) be the probability of losing a chromosome.
+
+Then:
+$$
+C_{i,t+1} = \begin{cases}
+  C_{i,t} + 1 & \text{with probability } P_g \\\\
+  C_{i,t} - 1 & \text{with probability } P_l, \text{ if } C_{i,t} > 0 \\\\
+  C_{i,t}     & \text{with probability } 1 - P_g - P_l
+\end{cases}
+$$
+
+Each cell in the population undergoes independent chromosomal changes at each time step.
+
+### Parameter Optimization via Grid Search
+- To identify the optimal symmetric transition probability \( p = P_g = P_l \), we conducted grid searches minimizing the Manhattan distance between the average simulated karyotype and the observed late-phase profile:
+  - Control late-phase: `SNU-668_C_A24_seed`
+  - Glucose 1 late-phase: `SNU-668_G1_A10_seed`
+  - Glucose 2 late-phase: `SNU-668_G2_A10_seed`
+- Three search strategies were employed to explore the parameter space:
+  - **Linear Grid Search**: \( p \in [0.01, 0.20] \), step size = 0.01  
+  - **Mid-range Grid Search**: \( p \in [0.005, 0.05] \), step size = 0.005  
+  - **Logarithmic Grid Search**: \( p \in \exp(\text{seq}(-10, 0, \text{length.out} = 50)) \)
+
+
+### Simulation Replicates and Test Statistics
+- For each parameter setting, 10 replicate simulations were performed to account for stochasticity.
+- Summary metrics:
+  - Pairwise Manhattan distances between average replicate profiles (to assess internal variability).
+  - Manhattan distance of each replicate to the experimental late-phase profile (to assess external validity).
+
+### Software and Implementation
+- All simulations and analyses were conducted in R (version X.X.X).
+- Custom functions were used to simulate chromosomal transitions and compute distance metrics.
+- Visualizations were generated using `ggplot2`, and tables via `kableExtra`.
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+set.seed(123)
+# Step 1: Extract early and late control cell-level karyotypes
+early_control_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_control_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()  
+
+late_control_profile_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+set.seed(123)
+# Step 2: Define simulation function (randomly sample start profiles from early pool)
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Safe probability vector
+      gain_prob <- as.numeric(p)
+      loss_prob <- as.numeric(p)
+      no_change_prob <- max(0, 1 - gain_prob - loss_prob)
+
+      probs <- c(gain_prob, loss_prob, no_change_prob)
+
+      # Normalize just in case they don’t sum to 1 due to rounding
+      probs <- probs / sum(probs)
+
+      # Sample changes for each chromosome
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+
+      # Update karyotype (ensure no negative copy number)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+  
+```
+
+
+# Results
+## 3.1 Control Condition
+### Option 1: Linear Sequence (for basic grid search)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p_seq <- p_seq <- seq(0.001, 0.05, by = 0.001) # This gives values from 1e-10 to 1
+param_grid_equal <- round(expand.grid(p = p_seq),5)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Run simulation only for equal gain/loss probabilities
+#luate all parameter combinations (minimize distance to late control)
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_control_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_control_profile))  # Manhattan distance
+    }
+  )
+
+
+head(results,10) %>% kableExtra::kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4,
+        align = "c") 
+
+```
+
+**Interpretation:** Table 1 presents a grid search over symmetric gain/loss probabilities (\( p_{\text{gain}} = p_{\text{loss}} = p \)  to identify the optimal transition rate for simulating karyotype evolution. Using 10 time steps from early-phase control, each simulation's fit to late-phase data was assessed via Manhattan distance. The optimal  \( p \) minimized this distance, indicating the best model fit under the symmetric transition assumption.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Define probability range (e.g., used in your grid search)
+p_min <- min(results$p)
+p_max <- max(results$p)
+
+# Identify optimal parameter (minimum distance)
+best_row <- results %>% filter(dist == min(dist))
+
+# Plot with annotation
+plot_1<-ggplot(results, aes(x = p, y = dist)) +
+  geom_line(size = 1.2, color = "#440154FF") +
+  geom_point(size = 2, color = "#440154FF") +
+  geom_point(data = best_row, aes(x = p, y = dist), color = "red", size = 3) +
+  geom_text(
+    data = best_row,
+    aes(x = p, y = dist, label = sprintf("Optimal p = %.3f", p)),
+    vjust = -1,
+    hjust = 0.5,
+    color = "red",
+    size = 4
+  ) +
+  labs(
+    title = sprintf("Grid Search for Symmetric Transition Probability (p ∈ [%.3f, %.3f])", min(results$p), max(results$p)),
+    subtitle = "Evaluating Simulation Fit via Manhattan Distance to Late Control Profile",
+    x = "P(gain) = P(loss)",
+    y = "Manhattan Distance"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+# Display table using kable
+kableExtra::kable(head(best_params,10), caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+                  digits = 4,)
+
+results_table <- head(results, 10) %>%
+  kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4,
+        align = "c")
+
+best_params_table <- kable(head(best_params, 10), 
+                           caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+                           digits = 4)
+
+# Create the tables
+table1 <- head(results, 10) %>% 
+  kable(caption = " Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4, align = "c")
+
+table2 <- head(best_params, 10) %>% 
+  kable(caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+        digits = 4)
+
+```
+
+**Interpretation:** Table 2 lists the top 10 transition probabilities \( p \) that best approximate the evolution of SNU-668 karyotypes from early to late control, assuming equal gain/loss rates. These values yield minimal Manhattan distances to the late-phase profile, suggesting the most plausible chromosomal turnover rates over the 4-month period.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_control_mat,
+  p = best_params$p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+# Step 2: Add 'treatment' column using mutate
+final_sim_control_f <- final_sim_df_f %>%
+  mutate(treatment = rep("Control", nrow(final_sim_df_f)))
+
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Control - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create heat matrix from simulated data
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))  # assuming chromosome columns are named V1 to V22
+
+# Define p value used (you must assign this earlier in your code)
+p_val <- best_params$p[1]
+
+# Plot heatmap for first 1000 cells
+plot_2<- pheatmap(
+  mat = heat_mat[1:1000, ],
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = sprintf("First 1000 Cells\nP(gain) = P(loss) = %.3f", p_val),
+  show_rownames = FALSE,
+  silent = T
+)
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+# Combine profiles into one data frame
+set.seed(123)
+profile_df <- rbind(
+  data.frame(cell = "Early Control", chrom = names(late_control_profile), copy = colMeans(early_control_mat)),
+  data.frame(cell = "Late Control",  chrom = names(late_control_profile), copy = late_control_profile),
+  data.frame(cell = "Simulated",     chrom = names(late_control_profile), copy = colMeans(final_sim))
+)
+
+# Convert chromosome to factor to preserve ordering
+profile_df$chrom <- factor(profile_df$chrom, levels = paste0("V", 1:22))
+
+# Plot
+plot_3<- ggplot(profile_df, aes(x = chrom, y = copy, fill = cell, group = cell)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Karyotype Evolution Under Equal Gain/Loss Model",
+    subtitle = sprintf("Grid: p_gain = p_loss ∈ [%.3f – %.3f], Optimal p = %.3f", 
+                       min(results$p), max(results$p), p_val),
+    x = "Chromosome",
+    y = "Mean Copy Number"
+  ) +
+  scale_fill_manual(values = c("Early Control" = "#1f77b4", 
+                               "Late Control" = "#ff7f0e", 
+                               "Simulated" = "#2ca02c")) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+### Simulation Replicates and Variability Analysis for Control - Linear Search
+To assess consistency and variability in simulated karyotypes under control conditions, we ran replicate simulations using the optimal transition probabilities. By comparing replicate-level averages via pairwise Manhattan distances, we quantified the stochastic variability of the model and its reliability in approximating the late-phase profile.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+# Step 1: Extract early and late control cell-level karyotypes
+early_control_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_control_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()  
+
+late_control_profile_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+set.seed(123)
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+
+
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Step 4: Evaluate distances using equal p_gain and p_loss
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_control_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_control_profile))  # Manhattan distance
+    }
+  )
+
+# Step 6: Final simulation using optimized equal probabilities
+best_p <- results %>% arrange(dist) %>% slice(1) %>% pull(p)
+
+final_sim <- simulate_karyotypes(
+  start_pool = early_control_mat,
+  p = best_p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+
+
+# Step 3: Run multiple replicate simulations using best_params
+set.seed(123)
+n_reps <- 10
+replicate_means <- matrix(NA, nrow = n_reps, ncol = ncol(early_control_mat))
+
+for (i in 1:n_reps) {
+  sim_data <- simulate_karyotypes(
+    start_pool = early_control_mat,
+    p = best_p[1] ,
+    n_cells = 1000,
+    time_steps = 10
+  )
+  replicate_means[i, ] <- colMeans(sim_data)
+}
+
+# Step 4: Compute pairwise distances between replicate profiles
+rep_dist_matrix <- as.matrix(dist(replicate_means, method = "manhattan"))
+
+# Step 5: Extract upper triangle distances as the test statistic
+pairwise_test_stat <- rep_dist_matrix[upper.tri(rep_dist_matrix)]
+
+# Step 6: Compute distance from each replicate to late-phase profile
+dist_to_late <- apply(replicate_means, 1, function(x) sum(abs(x - late_control_profile)))
+
+# Get summary statistics
+summary_pairwise <- summary(pairwise_test_stat)
+summary_to_late  <- summary(dist_to_late)
+
+p_grid_min <- min(p_seq)
+p_grid_max <- max(p_seq)
+best_p <- best_params$p[1]
+
+subtitle_text <- sprintf("Grid: P(gain) = P(loss) ∈ [%.3f, %.3f]; Optimal p = %.3f", 
+                         p_grid_min, p_grid_max, best_p)
+
+# Create long-form dataframe
+dist_df <- data.frame(
+  Value = c(pairwise_test_stat, dist_to_late),
+  Metric = rep(c("Pairwise Distances", "Distance to Late"), 
+               times = c(length(pairwise_test_stat), length(dist_to_late)))
+)
+
+# Extract best parameter values
+
+plot_4<- ggplot(dist_df, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(width = 0.4, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Variability of Simulated Karyotypes at Optimal Probability",
+    subtitle =subtitle_text,
+    x = NULL,
+    y = "Manhattan Distance"
+  ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r echo=FALSE, fig.height=14, fig.width=18, message=FALSE, warning=FALSE, out.width="100%"}
+# Combine the two heatmaps
+grid.arrange(plot_1, plot_2$gtable, plot_3, plot_4, ncol = 2)
+```
+**Figure 1** illustrates the performance of a discrete-time stochastic model simulating karyotype evolution under symmetric transition probabilities (\( p_{\text{gain}} = p_{\text{loss}} = p \)). The top-left panel presents the grid search across a range of probability values (0.001–0.05), identifying *p* = 0.005 as optimal based on the minimum Manhattan distance to the late control profile. The top-right heatmap displays chromosomal copy number variation across 1000 simulated cells at this optimal probability, showing structured diversity. The bottom-left bar plot compares mean copy numbers across chromosomes between early control, late control, and simulated cells, demonstrating the model's ability to recapitulate late-phase patterns. Finally, the bottom-right boxplot shows that internal replicate variability (pairwise distances) is lower than the distance to the experimental late profile, supporting both consistency and external fit of the simulation.
+
+
+```{r echo=FALSE, warning=FALSE, fig.height=7, fig.width=10, message=FALSE, out.width="75%"}
+# Optional: Plot
+library(ggplot2)
+dist_df <- data.frame(Distance = dist_to_late, Replicate = paste0("Sim", 1:10))
+
+# Plot with annotation of best parameters
+ ggplot(dist_df, aes(x = Replicate, y = Distance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(dist_to_late), linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Distance from Simulated Control Replicates to Late-Phase Profile",
+    y = "Manhattan Distance",
+    x = "Replicate",
+    subtitle = subtitle_text
+  )
+
+```
+**Figure 2** shows the Manhattan distances between each of the 10 simulated control replicates (Sim1–Sim10) and the observed late-phase control profile under the optimal transition probability (*p* = 0.005), obtained via linear grid search over (\( p_{\text{gain}} = p_{\text{loss}} = p \)) ∈ [0.001, 0.050]. All simulated replicates produce distances close to the red dashed line representing the best single fit from the grid search, indicating high consistency and reproducibility of the model under the control condition. This supports the objective of recovering a biologically plausible transition rate that approximates karyotypic evolution over 4 months.
+
+
+
+
+### Option 2: Logarithmic Scale (to cover multiple orders of magnitude)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p_seq <- exp(seq(log(1e-5), log(0.1), length.out = 50))
+param_grid_equal <- round(expand.grid(p = p_seq),5)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Run simulation only for equal gain/loss probabilities
+#luate all parameter combinations (minimize distance to late control)
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_control_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_control_profile))  # Manhattan distance
+    }
+  )
+
+
+head(results,10) %>% kableExtra::kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4,
+        align = "c") 
+
+```
+
+**Interpretation:** Table 3 presents results from a log-scale grid search of symmetric transition probabilities (\( p_{\text{gain}} = p_{\text{loss}} = p \)), aimed at efficiently identifying the optimal rate of chromosomal gain/loss. Simulations over 10 time steps from early-phase controls were compared to late-phase profiles using Manhattan distance, with the optimal \( p \) minimizing this distance and representing the best-fitting model under the symmetric transition assumption.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Define probability range (e.g., used in your grid search)
+p_min <- min(results$p)
+p_max <- max(results$p)
+
+# Identify optimal parameter (minimum distance)
+best_row <- results %>% filter(dist == min(dist))
+
+# Plot with annotation
+plot_1<-ggplot(results, aes(x = p, y = dist)) +
+  geom_line(size = 1.2, color = "#440154FF") +
+  geom_point(size = 2, color = "#440154FF") +
+  geom_point(data = best_row, aes(x = p, y = dist), color = "red", size = 3) +
+  geom_text(
+    data = best_row,
+    aes(x = p, y = dist, label = sprintf("Optimal p = %.3f", p)),
+    vjust = -1,
+    hjust = 0.5,
+    color = "red",
+    size = 4
+  ) +
+  labs(
+    title = sprintf("Grid Search for Symmetric Transition Probability (p ∈ [%.3f, %.3f])", min(results$p), max(results$p)),
+    subtitle = "Evaluating Simulation Fit via Manhattan Distance to Late Control Profile",
+    x = "P(gain) = P(loss)",
+    y = "Manhattan Distance"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+# Display table using kable
+kableExtra::kable(head(best_params,10), caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+                  digits = 4,)
+
+results_table <- head(results, 10) %>%
+  kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4,
+        align = "c")
+
+best_params_table <- kable(head(best_params, 10), 
+                           caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+                           digits = 4)
+
+# Create the tables
+table1 <- head(results, 10) %>% 
+  kable(caption = " Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4, align = "c")
+
+table2 <- head(best_params, 10) %>% 
+  kable(caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+        digits = 4)
+
+```
+
+**Interpretation:** Table 4 shows the top 10 optimized values of the symmetric transition probability \(p\), representing the most plausible chromosomal gain/loss rates that best reproduce the late-phase control profile of SNU-668 cells. These values, derived from simulations minimizing the Manhattan distance to observed data, reflect the most likely karyotype evolution trajectories over 4 months under the equal gain/loss assumption.
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_control_mat,
+  p = best_params$p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+# Step 2: Add 'treatment' column using mutate
+final_sim_control_f <- final_sim_df_f %>%
+  mutate(treatment = rep("Control", nrow(final_sim_df_f)))
+
+set.seed(123)
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Control - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+# Create heat matrix from simulated data
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))  # assuming chromosome columns are named V1 to V22
+
+# Define p value used (you must assign this earlier in your code)
+p_val <- best_params$p[1]
+
+# Plot heatmap for first 1000 cells
+plot_2<- pheatmap(
+  mat = heat_mat[1:1000, ],
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = sprintf("First 1000 Cells\nP(gain) = P(loss) = %.3f", p_val),
+  show_rownames = FALSE,
+  silent = T
+)
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Combine profiles into one data frame
+profile_df <- rbind(
+  data.frame(cell = "Early Control", chrom = names(late_control_profile), copy = colMeans(early_control_mat)),
+  data.frame(cell = "Late Control",  chrom = names(late_control_profile), copy = late_control_profile),
+  data.frame(cell = "Simulated",     chrom = names(late_control_profile), copy = colMeans(final_sim))
+)
+
+# Convert chromosome to factor to preserve ordering
+profile_df$chrom <- factor(profile_df$chrom, levels = paste0("V", 1:22))
+
+# Plot
+plot_3<- ggplot(profile_df, aes(x = chrom, y = copy, fill = cell, group = cell)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Karyotype Evolution Under Equal Gain/Loss Model",
+    subtitle = sprintf("Grid: p_gain = p_loss ∈ [%.3f – %.3f], Optimal p = %.3f", 
+                       min(results$p), max(results$p), p_val),
+    x = "Chromosome",
+    y = "Mean Copy Number"
+  ) +
+  scale_fill_manual(values = c("Early Control" = "#1f77b4", 
+                               "Late Control" = "#ff7f0e", 
+                               "Simulated" = "#2ca02c")) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+### Simulation Replicates and Variability Analysis - Log search
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+# Step 1: Extract early and late control cell-level karyotypes
+early_control_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_control_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()  
+
+late_control_profile_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+set.seed(123)
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Step 4: Evaluate distances using equal p_gain and p_loss
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_control_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_control_profile))  # Manhattan distance
+    }
+  )
+
+set.seed(123)
+# Step 6: Final simulation using optimized equal probabilities
+best_p <- results %>% arrange(dist) %>% slice(1) %>% pull(p)
+
+final_sim <- simulate_karyotypes(
+  start_pool = early_control_mat,
+  p = best_p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+
+
+# Step 3: Run multiple replicate simulations using best_params
+set.seed(123)
+n_reps <- 10
+replicate_means <- matrix(NA, nrow = n_reps, ncol = ncol(early_control_mat))
+
+for (i in 1:n_reps) {
+  sim_data <- simulate_karyotypes(
+    start_pool = early_control_mat,
+    p = best_p[1] ,
+    n_cells = 1000,
+    time_steps = 10
+  )
+  replicate_means[i, ] <- colMeans(sim_data)
+}
+
+# Step 4: Compute pairwise distances between replicate profiles
+rep_dist_matrix <- as.matrix(dist(replicate_means, method = "manhattan"))
+
+# Step 5: Extract upper triangle distances as the test statistic
+pairwise_test_stat <- rep_dist_matrix[upper.tri(rep_dist_matrix)]
+
+# Step 6: Compute distance from each replicate to late-phase profile
+dist_to_late <- apply(replicate_means, 1, function(x) sum(abs(x - late_control_profile)))
+
+# Get summary statistics
+summary_pairwise <- summary(pairwise_test_stat)
+summary_to_late  <- summary(dist_to_late)
+
+p_grid_min <- min(p_seq)
+p_grid_max <- max(p_seq)
+
+subtitle_text <- sprintf("Grid: P(gain) = P(loss) ∈ [%.3f, %.3f]; Optimal p = %.3f", 
+                         p_grid_min, p_grid_max, p_val)
+
+# Create long-form dataframe
+dist_df <- data.frame(
+  Value = c(pairwise_test_stat, dist_to_late),
+  Metric = rep(c("Pairwise Distances", "Distance to Late"), 
+               times = c(length(pairwise_test_stat), length(dist_to_late)))
+)
+
+# Extract best parameter values
+
+plot_4<- ggplot(dist_df, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(width = 0.4, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Variability of Simulated Karyotypes at Optimal Probability",
+    subtitle = subtitle_text,
+    x = NULL,
+    y = "Manhattan Distance"
+  ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+
+
+```{r echo=FALSE, fig.height=14, fig.width=18, message=FALSE, warning=FALSE, out.width="100%"}
+# Combine the two heatmaps
+grid.arrange(plot_1, plot_2$gtable, plot_3, plot_4, ncol = 2)
+```
+**Figure 3** illustrates the performance of the discrete-time Markov model under a logarithmic grid search of symmetric transition probabilities (\( p_{\text{gain}} = p_{\text{loss}} = p \)) ranging from 0.000 to 0.100. The optimal fit, determined at *p* = 0.000, yielded the lowest Manhattan distance to the observed late-phase control profile, as shown in the grid search plot (top-left). The heatmap (top-right) displays the karyotype distribution of the first 1000 simulated control cells, which retains features closely resembling the early control profile, indicating limited chromosomal evolution under a no-change model. The bar plot (bottom-left) highlights the similarity in mean chromosome copy numbers between early control and simulated cells, while the boxplot (bottom-right) shows that all simulated replicates consistently approximate the late-phase profile with minimal variability. This suggests that under the control condition, a no-change model (*p* = 0.000) sufficiently captures the evolutionary stability of karyotypes over time.
+
+
+```{r echo=FALSE, warning=FALSE, fig.height=7, fig.width=10, message=FALSE, out.width="75%"}
+# Optional: Plot
+library(ggplot2)
+dist_df <- data.frame(Distance = dist_to_late, Replicate = paste0("Sim", 1:10))
+
+
+# Plot with annotation of best parameters
+ ggplot(dist_df, aes(x = Replicate, y = Distance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(dist_to_late), linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Distance from Simulated Control Replicates to Late-Phase Profile",
+    y = "Manhattan Distance",
+    x = "Replicate",
+    subtitle = subtitle_text
+  )
+
+```
+
+**Figure 4** displays the Manhattan distances between each of the ten simulated control replicates and the observed late-phase control profile. The red dashed line represents the average distance across simulations. Under the optimal transition probability (*p* = 0.000) identified via logarithmic grid search, all replicates consistently approximate the late-phase profile. This demonstrating that a no-change model effectively recapitulates the observed karyotypic state, indicating minimal chromosomal evolution under control conditions.
+
+
+### Option 3: Mid-Range Balanced Search
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p_seq <- seq(0.0005, 0.02, by = 0.0005)
+param_grid_equal <- expand.grid(p = p_seq)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Run simulation only for equal gain/loss probabilities
+#luate all parameter combinations (minimize distance to late control)
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_control_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_control_profile))  # Manhattan distance
+    }
+  )
+
+
+head(results,10) %>% kableExtra::kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4,
+        align = "c") 
+
+```
+
+**Interpretation:** Table 5 presents a grid search over symmetric transition probabilities  used to simulate karyotype evolution in early-phase control cells. The optimal \(p\) with  (\( p_{\text{gain}} = p_{\text{loss}} = p \)) , identified by minimizing the Manhattan distance to the late-phase profile, represents the best-fitting rate of chromosomal turnover under the equal gain/loss assumption.
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Define probability range (e.g., used in your grid search)
+p_min <- min(results$p)
+p_max <- max(results$p)
+
+# Identify optimal parameter (minimum distance)
+best_row <- results %>% filter(dist == min(dist))
+
+# Plot with annotation
+plot_1<-ggplot(results, aes(x = p, y = dist)) +
+  geom_line(size = 1.2, color = "#440154FF") +
+  geom_point(size = 2, color = "#440154FF") +
+  geom_point(data = best_row, aes(x = p, y = dist), color = "red", size = 3) +
+  geom_text(
+    data = best_row,
+    aes(x = p, y = dist, label = sprintf("Optimal p = %.3f", p)),
+    vjust = -1,
+    hjust = 0.5,
+    color = "red",
+    size = 4
+  ) +
+  labs(
+    title = sprintf("Grid Search for Symmetric Transition Probability (p ∈ [%.3f, %.3f])", min(results$p), max(results$p)),
+    subtitle = "Evaluating Simulation Fit via Manhattan Distance to Late Control Profile",
+    x = "P(gain) = P(loss)",
+    y = "Manhattan Distance"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
+
+
+
+```{r echo=FALSE, warning=FALSE}
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+# Display table using kable
+kableExtra::kable(head(best_params,10), caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+                  digits = 4,)
+
+results_table <- head(results, 10) %>%
+  kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4,
+        align = "c")
+
+best_params_table <- kable(head(best_params, 10), 
+                           caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+                           digits = 4)
+
+# Create the tables
+table1 <- head(results, 10) %>% 
+  kable(caption = " Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4, align = "c")
+
+table2 <- head(best_params, 10) %>% 
+  kable(caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+        digits = 4)
+
+```
+
+**Interpretation:** Table 6 illustrate top 10 optimized values of \(p\) which reflect the most plausible equal gain/loss rates that best reproduce the karyotype transition from early to late control in SNU-668 cells, based on minimizing the Manhattan distance to the observed late-phase profile.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_control_mat,
+  p = best_params$p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+# Step 2: Add 'treatment' column using mutate
+final_sim_control_f <- final_sim_df_f %>%
+  mutate(treatment = rep("Control", nrow(final_sim_df_f)))
+
+set.seed(123)
+
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Control - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+
+# Create heat matrix from simulated data
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))  # assuming chromosome columns are named V1 to V22
+
+# Define p value used (you must assign this earlier in your code)
+p_val <- best_params$p[1]
+
+# Plot heatmap for first 1000 cells
+plot_2<- pheatmap(
+  mat = heat_mat[1:1000, ],
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = sprintf("First 1000 Cells\nP(gain) = P(loss) = %.3f", p_val),
+  show_rownames = FALSE,
+  silent = T
+)
+
+```
+
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+
+# Combine profiles into one data frame
+profile_df <- rbind(
+  data.frame(cell = "Early Control", chrom = names(late_control_profile), copy = colMeans(early_control_mat)),
+  data.frame(cell = "Late Control",  chrom = names(late_control_profile), copy = late_control_profile),
+  data.frame(cell = "Simulated",     chrom = names(late_control_profile), copy = colMeans(final_sim))
+)
+
+# Convert chromosome to factor to preserve ordering
+profile_df$chrom <- factor(profile_df$chrom, levels = paste0("V", 1:22))
+
+# Plot
+plot_3<-ggplot(profile_df, aes(x = chrom, y = copy, fill = cell, group = cell)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Karyotype Evolution Under Equal Gain/Loss Model",
+    subtitle = sprintf("Grid: p_gain = p_loss ∈ [%.3f – %.3f], Optimal p = %.3f", 
+                       min(results$p), max(results$p), p_val),
+    x = "Chromosome",
+    y = "Mean Copy Number"
+  ) +
+  scale_fill_manual(values = c("Early Control" = "#1f77b4", 
+                               "Late Control" = "#ff7f0e", 
+                               "Simulated" = "#2ca02c")) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+### Simulation Replicates and Variability Analysis - Mid search
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+# Step 1: Extract early and late control cell-level karyotypes
+early_control_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_control_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()  
+
+late_control_profile_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_C_A24_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+set.seed(123)
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Step 4: Evaluate distances using equal p_gain and p_loss
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_control_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_control_profile))  # Manhattan distance
+    }
+  )
+
+# Step 6: Final simulation using optimized equal probabilities
+best_p <- results %>% arrange(dist) %>% slice(1) %>% pull(p)
+
+final_sim <- simulate_karyotypes(
+  start_pool = early_control_mat,
+  p = best_p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+
+
+# Step 3: Run multiple replicate simulations using best_params
+set.seed(123)
+n_reps <- 10
+replicate_means <- matrix(NA, nrow = n_reps, ncol = ncol(early_control_mat))
+
+for (i in 1:n_reps) {
+  sim_data <- simulate_karyotypes(
+    start_pool = early_control_mat,
+    p = best_p[1] ,
+    n_cells = 1000,
+    time_steps = 10
+  )
+  replicate_means[i, ] <- colMeans(sim_data)
+}
+
+# Step 4: Compute pairwise distances between replicate profiles
+rep_dist_matrix <- as.matrix(dist(replicate_means, method = "manhattan"))
+
+# Step 5: Extract upper triangle distances as the test statistic
+pairwise_test_stat <- rep_dist_matrix[upper.tri(rep_dist_matrix)]
+
+# Step 6: Compute distance from each replicate to late-phase profile
+dist_to_late <- apply(replicate_means, 1, function(x) sum(abs(x - late_control_profile)))
+
+# Get summary statistics
+summary_pairwise <- summary(pairwise_test_stat)
+summary_to_late  <- summary(dist_to_late)
+
+p_grid_min <- min(p_seq)
+p_grid_max <- max(p_seq)
+best_p <- best_params$p[1]
+
+subtitle_text <- sprintf("Grid: P(gain) = P(loss) ∈ [%.3f, %.3f]; Optimal p = %.3f", 
+                         p_grid_min, p_grid_max, best_p)
+
+# Create long-form dataframe
+dist_df <- data.frame(
+  Value = c(pairwise_test_stat, dist_to_late),
+  Metric = rep(c("Pairwise Distances", "Distance to Late"), 
+               times = c(length(pairwise_test_stat), length(dist_to_late)))
+)
+
+# Extract best parameter values
+
+plot_4<- ggplot(dist_df, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(width = 0.4, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Variability of Simulated Karyotypes at Optimal Probability",
+    subtitle = subtitle_text,
+    x = NULL,
+    y = "Manhattan Distance"
+  ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r echo=FALSE, fig.height=14, fig.width=18, message=FALSE, warning=FALSE, out.width="100%"}
+# Combine the two heatmaps
+grid.arrange(plot_1, plot_2$gtable, plot_3, plot_4, ncol = 2)
+```
+
+**Figure 5:** explores the fit of the discrete-time Markov model using a mid-range symmetric probability grid `(P(gain) = P(loss) ∈ [0.001, 0.020])`, yielding an optimal probability of 0.003. At this setting, the simulated profiles begin to reflect several chromosomal alterations seen in the late control, including partial gains and losses across multiple chromosomes. The heatmap reveals increased karyotypic heterogeneity, and the barplot shows that the simulated mean copy numbers closely approximate the late-phase control distribution for several chromosomes. The Manhattan distance boxplot confirms that the distance between simulated replicates and the late-phase profile is minimized around this optimal setting, supporting the model's ability to partially recapitulate control evolution.
+
+
+```{R echo=FALSE, warning=FALSE}
+# Optional: Plot
+library(ggplot2)
+dist_df <- data.frame(Distance = dist_to_late, Replicate = paste0("Sim", 1:10))
+
+# Extract best parameters for display
+#p_gain_val <- round(best_params$p_gain, 3)
+#p_loss_val <- round(best_params$p_loss, 3)
+
+# Plot with annotation of best parameters
+ ggplot(dist_df, aes(x = Replicate, y = Distance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(dist_to_late), linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Distance from Simulated Control Replicates to Late-Phase Profile",
+    y = "Manhattan Distance",
+    x = "Replicate",
+    subtitle = subtitle_text
+  )
+
+```
+
+
+**Figure 6:** shows the Manhattan distances between each of the 10 simulated control replicates (using the mid-range grid search: `P(gain) = P(loss) ∈ [0.001, 0.020]`, optimal p = 0.003) and the late-phase control profile. All replicates exhibit consistently low distances, clustering tightly around the red dashed line representing the average, indicating that the simulation effectively reproduces the late control karyotype at this optimal setting. This supports the model's validity under the mid-range transition probability in capturing the evolutionary dynamics observed in the control condition.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+rm(list = ls())
+```
+
+## 3.2 Glucose 1 Condition
+```{r echo=FALSE, message=FALSE, warning=FALSE, includelude=FALSE}
+
+db <- dbConnect(MariaDB(), dbname="CLONEID", 
+                host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com", 
+                user="danielolofin",
+                  password="Karyotyping_Analysis")
+
+query <- "SELECT id, passaged_from_id1, passage, event, date, media from Passaging WHERE passaged_from_id1"
+mismatches <- dbGetQuery(db, query)
+
+```
+
+```{r include=FALSE}
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+
+```
+
+```{r include=FALSE}
+dbListFields(db,"Perspective") ##karyotype data is in here.
+```
+
+```{r include=FALSE}
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+```
+
+```{r include=FALSE}
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+```
+
+
+
+```{r include=FALSE}
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the 
+## passaging table.
+
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+```
+
+```{r include=FALSE}
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+```
+
+
+```{r include=FALSE}
+# Define origins and build query
+origins <- c(
+  "SNU-668_R1_A55_seedT1", "SNU-668_R3_A55_seedT1", "SNU-668_K1_A34_seedT1",
+  "SNU-668_K2_A34_seedT1", "SNU-668_K3_A34_seedT1", "HGC-27_RevG_A9-F_seed",
+  "HGC-27_RevG2_A7-F_seed", "SNU-668_G1_A4_seed", "SNU-668_G2_A4_seed",
+  "HGC-27_RevC_A45_seed", "SNU-668_RevG_A3_seed", "SNU-668_P2_A18k_seed",
+  "SNU-668_P0_A11K_seed", "SNU-668_r2_A55_seedT1", "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed", "SNU-668_RevG_A10_seed", "HGC-27_G1_A9-F_seed",
+  "HGC-27_G2_A9_harvesT155", "HGC-27_G2_A9-F_seed", "HGC-27_G1_A9_harvesT155",
+  "HGC-27_RevG_A9_harvesT149", "HGC-27_RevG2_A8_seed", "MDA-MB-231_P_A2_harvest",
+  "HGC-27_C_A45_seed", "SNU-668_RevC_A27_seed", "SNU-668_C_A24_seed",
+  "SNU-668_C_A4_seed", "SNU-668_RevC_A3_seed", "MDA-MB-231_RPMI_A12_VT2_seed",
+  "SNU-668_P1_A18K_seed", "SNU-668_O1_A3_exp_seedT4", "SNU-668_O2_A3_exp_seedT4",
+  "HGC-27_P1_A18K_harvest", "HGC-27_P2_A18K_harvest", "SUM159_NLS_4N_O1_A7K_harvest",
+  "SUM159_NLS_2N_O1_A7K_harvest", "SUM-159_NLS_4N_A5M_K_harvest",
+  "SUM159_NLS_4N_O2_A7K_harvest", "SUM159_NLS_2N_O2_A7K_harvest",
+  "SUM-159_NLS_2N_A7M_K_harvest"
+)
+
+
+## Passaging table
+q <- paste0("SELECT * FROM Passaging")
+rs <- dbSendQuery(db, q)
+res_passage <- dbFetch(rs)
+dbClearResult(rs)
+
+names(res_passage)[1] <- "replicate_id"
+
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+ q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+
+
+# Fetch data from the database
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+```
+
+
+
+```{r include=FALSE}
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+
+
+res$treatment_group <- case_when(
+  grepl("_G1|_G2", res$origin) ~ "Glucose",
+  grepl("_K1|_K2|_K3|_K", res$origin) ~ "K_Condition",
+  grepl("_P1|_P2|_P0|_P", res$origin) ~ "Phosphate",
+  grepl("_R1|_R2|_R3|_r2", res$origin) ~ "R_Condition",
+  grepl("_O1|_O2", res$origin) ~ "Oxygen",
+  grepl("_RevC", res$origin) ~ "Reversine_Control",
+  grepl("_RevG|_RevG2", res$origin) ~ "Reversine_Glucose",
+  grepl("_C", res$origin) ~ "Control",
+  grepl("_RPMI", res$origin) ~ "RPMI",
+  TRUE ~ NA_character_
+)
+
+
+# Seperating SNU_168 by number of their chomosome
+res %>% 
+    mutate(sampleSource = ifelse(str_detect(alias, "N4") & sampleSource == "SUM-159",
+                               "SUM-159-4N",
+                               sampleSource)) -> res
+
+
+
+
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$cloneID <- res$cloneID
+karyo_df$line<- res$sampleSource
+karyo_df$replicate_id<- res$origin
+
+unique(karyo_df$replicate_id)
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# Joining the passaging data 
+joined_data <- left_join(karyo_df, res_passage, by = "replicate_id")
+
+
+# Creating a new data set for MDAMB231
+joined_data %>% 
+  filter(cellLine == "SNU-668" & treatment == "Glucose") -> SNU_668_Gl
+
+round(SNU_668_Gl$date[64] %--% SNU_668_Gl$date[1]/months(1))
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 1: Extract early and late control cell-level karyotypes
+early_glucose_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_glucose_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A10_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+late_glucose_profile_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A10_seed") %>%
+  select(starts_with("V")) %>%
+as.matrix()
+
+set.seed(123)
+# Step 2: Define simulation function (randomly sample start profiles from early pool)
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Safe probability vector
+      gain_prob <- as.numeric(p)
+      loss_prob <- as.numeric(p)
+      no_change_prob <- max(0, 1 - gain_prob - loss_prob)
+
+      probs <- c(gain_prob, loss_prob, no_change_prob)
+
+      # Normalize just in case they don’t sum to 1 due to rounding
+      probs <- probs / sum(probs)
+
+      # Sample changes for each chromosome
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+
+      # Update karyotype (ensure no negative copy number)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+```
+
+
+### Option 1: Linear Sequence (for basic grid search)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p_seq <- p_seq <- seq(0.001, 0.05, by = 0.001) # This gives values from 1e-10 to 1
+param_grid_equal <- expand.grid(p = p_seq)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Run simulation only for equal gain/loss probabilities
+#luate all parameter combinations (minimize distance to late control)
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+
+head(results,10) %>% kableExtra::kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 1 Condition)",
+        digits = 4,
+        align = "c") 
+
+```
+
+**Interpretation:** Table 7 presents a linear-scale grid search over symmetric transition probabilities, optimizing simulations of karyotype evolution from early to late control profiles. The optimal \(p\) minimizes the Manhattan distance, reflecting the most plausible chromosomal turnover rate under the equal gain/loss assumption.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Define probability range (e.g., used in your grid search)
+p_min <- min(results$p)
+p_max <- max(results$p)
+
+# Identify optimal parameter (minimum distance)
+best_row <- results %>% filter(dist == min(dist))
+
+# Plot with annotation
+plot_1<-ggplot(results, aes(x = p, y = dist)) +
+  geom_line(size = 1.2, color = "#440154FF") +
+  geom_point(size = 2, color = "#440154FF") +
+  geom_point(data = best_row, aes(x = p, y = dist), color = "red", size = 3) +
+  geom_text(
+    data = best_row,
+    aes(x = p, y = dist, label = sprintf("Optimal p = %.3f", p)),
+    vjust = -1,
+    hjust = 0.5,
+    color = "red",
+    size = 4
+  ) +
+  labs(
+    title = sprintf("Grid Search for Symmetric Transition Probability (p ∈ [%.3f, %.3f])", min(results$p), max(results$p)),
+    subtitle = "Evaluating Simulation Fit via Manhattan Distance to Late Glucose 1 Profile",
+    x = "P(gain) = P(loss)",
+    y = "Manhattan Distance"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+# Display table using kable
+kableExtra::kable(head(best_params,10), caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose Profile",
+                  digits = 4,)
+
+results_table <- head(results, 10) %>%
+  kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 1 Condition)",
+        digits = 4,
+        align = "c")
+
+best_params_table <- kable(head(best_params, 10), 
+                           caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose 1 Profile",
+                           digits = 4)
+
+# Create the tables
+table1 <- head(results, 10) %>% 
+  kable(caption = " Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 1 Condition)",
+        digits = 4, align = "c")
+
+table2 <- head(best_params, 10) %>% 
+  kable(caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose 1 Profile",
+        digits = 4)
+
+```
+
+**Interpretation:** Table 8 illustrate top 10 optimized values of \(p\) which reflect the most plausible equal gain/loss rates that best reproduce the karyotype transition from early to late Glucose 1 in SNU-668 cells, based on minimizing the Manhattan distance to the observed late-phase profile.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_params$p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+# Step 2: Add 'treatment' column using mutate
+final_sim_control_f <- final_sim_df_f %>%
+  mutate(treatment = rep("Control", nrow(final_sim_df_f)))
+
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Glucose 1 - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create heat matrix from simulated data
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))  # assuming chromosome columns are named V1 to V22
+
+# Define p value used (you must assign this earlier in your code)
+p_val <- best_params$p[1]
+
+# Plot heatmap for first 1000 cells
+plot_2<-pheatmap(
+  mat = heat_mat[1:1000, ],
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = sprintf("First 1000 Cells\nP(gain) = P(loss) = %.3f", p_val),
+  show_rownames = FALSE,
+  silent = T
+)
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Combine profiles into one data frame
+profile_df <- rbind(
+  data.frame(cell = "Early Glucose", chrom = names(late_glucose_profile), copy = colMeans(early_glucose_mat)),
+  data.frame(cell = "Late Glucose",  chrom = names(late_glucose_profile), copy = late_glucose_profile),
+  data.frame(cell = "Simulated",     chrom = names(late_glucose_profile), copy = colMeans(final_sim))
+)
+
+# Convert chromosome to factor to preserve ordering
+profile_df$chrom <- factor(profile_df$chrom, levels = paste0("V", 1:22))
+
+# Plot
+plot_3<- ggplot(profile_df, aes(x = chrom, y = copy, fill = cell, group = cell)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Karyotype Evolution Under Equal Gain/Loss Model",
+    subtitle = sprintf("Grid: p_gain = p_loss ∈ [%.3f – %.3f], Optimal p = %.3f", 
+                       min(results$p), max(results$p), p_val),
+    x = "Chromosome",
+    y = "Mean Copy Number"
+  ) +
+  scale_fill_manual(values = c("Early Glucose" = "#1f77b4", 
+                               "Late Glucose" = "#ff7f0e", 
+                               "Simulated" = "#2ca02c")) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+
+### Simulation Replicates and Variability Analysis
+To assess the robustness of the model for Glucose 1, we performed replicate simulations using the optimized symmetric transition probability. Variability was quantified using pairwise Manhattan distances between replicate means, capturing stochastic effects. Additionally, three successive refinements of the parameter grid were conducted to ensure that the chosen probability reliably captured the late-phase Glucose 1 karyotype profile, confirming the stability and biological plausibility of the model fit.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+# Step 1: Extract early and late control cell-level karyotypes
+early_glucose_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_glucose_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A10_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+late_glucose_profile_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A10_seed") %>%
+  select(starts_with("V")) %>%
+as.matrix()
+
+set.seed(123)
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Step 4: Evaluate distances using equal p_gain and p_loss
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+set.seed(123)
+# Step 6: Final simulation using optimized equal probabilities
+best_p <- results %>% arrange(dist) %>% slice(1) %>% pull(p)
+
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+
+
+# Step 3: Run multiple replicate simulations using best_params
+set.seed(123)
+n_reps <- 10
+replicate_means <- matrix(NA, nrow = n_reps, ncol = ncol(early_glucose_mat))
+
+for (i in 1:n_reps) {
+  sim_data <- simulate_karyotypes(
+    start_pool = early_glucose_mat,
+    p = best_p[1] ,
+    n_cells = 1000,
+    time_steps = 10
+  )
+  replicate_means[i, ] <- colMeans(sim_data)
+}
+
+# Step 4: Compute pairwise distances between replicate profiles
+rep_dist_matrix <- as.matrix(dist(replicate_means, method = "manhattan"))
+
+# Step 5: Extract upper triangle distances as the test statistic
+pairwise_test_stat <- rep_dist_matrix[upper.tri(rep_dist_matrix)]
+
+# Step 6: Compute distance from each replicate to late-phase profile
+dist_to_late <- apply(replicate_means, 1, function(x) sum(abs(x - late_glucose_profile)))
+
+# Get summary statistics
+summary_pairwise <- summary(pairwise_test_stat)
+summary_to_late  <- summary(dist_to_late)
+
+p_grid_min <- min(p_seq)
+p_grid_max <- max(p_seq)
+best_p <- best_params$p[1]
+
+subtitle_text <- sprintf("Grid: P(gain) = P(loss) ∈ [%.3f, %.3f]; Optimal p = %.3f", 
+                         p_grid_min, p_grid_max, best_p)
+
+
+# Create long-form dataframe
+dist_df <- data.frame(
+  Value = c(pairwise_test_stat, dist_to_late),
+  Metric = rep(c("Pairwise Distances", "Distance to Late"), 
+               times = c(length(pairwise_test_stat), length(dist_to_late)))
+)
+
+# Extract best parameter values
+
+plot_4<-ggplot(dist_df, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(width = 0.4, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Variability of Simulated Karyotypes at Optimal Probability",
+    subtitle = subtitle_text,
+    x = NULL,
+    y = "Manhattan Distance"
+  ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r echo=FALSE, fig.height=14, fig.width=18, message=FALSE, warning=FALSE, out.width="100%"}
+# Combine the two heatmaps
+grid.arrange(plot_1, plot_2$gtable, plot_3, plot_4, ncol = 2)
+```
+
+**Figure 7:** illustrates the performance of the discrete-time Markov model under Glucose 1 treatment using a linear grid search of symmetric transition probabilities, P(gain) = P(loss) ∈ [0.001, 0.050]. The optimal transition probability was identified at p = 0.010, which minimized the Manhattan distance between simulated and late-phase Glucose 1 profiles. The heatmap reveals the diversity of copy number states across chromosomes in the first 1000 simulated cells, showing concordance with late-phase variation. The bar plot demonstrates close alignment in chromosomal copy number trends between early Glucose, late Glucose, and the simulated profiles. Notably, the boxplot highlights that while inter-replicate variability is low, the simulated profiles remain consistently distant from the late-phase Glucose 1 target, suggesting partial recapitulation of late-stage karyotypes under the selected model parameters.
+
+
+
+```{R echo=FALSE, warning=FALSE}
+# Optional: Plot
+library(ggplot2)
+dist_df <- data.frame(Distance = dist_to_late, Replicate = paste0("Sim", 1:10))
+
+# Extract best parameters for display
+#p_gain_val <- round(best_params$p_gain, 3)
+#p_loss_val <- round(best_params$p_loss, 3)
+
+# Plot with annotation of best parameters
+ ggplot(dist_df, aes(x = Replicate, y = Distance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(dist_to_late), linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Distance from Simulated Glucose 1 Replicates to Late-Phase Profile",
+    y = "Manhattan Distance",
+    x = "Replicate",
+    subtitle = subtitle_text
+  )
+
+```
+
+**Figure 8:** displays the Manhattan distances show that simulated Glucose 1 replicates using the optimal probability (p = 0.010) are consistent across runs but remain notably distant from the actual late-phase profile. This suggests that while the equal gain/loss model is stable, it only partially captures the karyotypic evolution under Glucose 1 treatment.
+
+
+### Option 3: Mid-Range Balanced Search
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p_seq <- seq(0.0005, 0.02, by = 0.0005)
+param_grid_equal <- expand.grid(p = p_seq)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Run simulation only for equal gain/loss probabilities
+#luate all parameter combinations (minimize distance to late control)
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+
+head(results,10) %>% kableExtra::kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 1 Condition)",
+        digits = 4,
+        align = "c") 
+
+```
+
+**Interpretation:** Table 9 presents a linear-scale grid search over symmetric transition probabilities, optimizing simulations of karyotype evolution from early to late glucose 1 profiles. The optimal \(p\) minimizes the Manhattan distance, reflecting the most plausible chromosomal turnover rate under the equal gain/loss assumption.
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Define probability range (e.g., used in your grid search)
+p_min <- min(results$p)
+p_max <- max(results$p)
+
+# Identify optimal parameter (minimum distance)
+best_row <- results %>% filter(dist == min(dist))
+
+# Plot with annotation
+plot_1<-ggplot(results, aes(x = p, y = dist)) +
+  geom_line(size = 1.2, color = "#440154FF") +
+  geom_point(size = 2, color = "#440154FF") +
+  geom_point(data = best_row, aes(x = p, y = dist), color = "red", size = 3) +
+  geom_text(
+    data = best_row,
+    aes(x = p, y = dist, label = sprintf("Optimal p = %.3f", p)),
+    vjust = -1,
+    hjust = 0.5,
+    color = "red",
+    size = 4
+  ) +
+  labs(
+    title = sprintf("Grid Search for Symmetric Transition Probability (p ∈ [%.3f, %.3f])", min(results$p), max(results$p)),
+    subtitle = "Evaluating Simulation Fit via Manhattan Distance to Late Glucose Profile",
+    x = "P(gain) = P(loss)",
+    y = "Manhattan Distance"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+# Display table using kable
+kableExtra::kable(head(best_params,10), caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose Profile",
+                  digits = 4,)
+
+results_table <- head(results, 10) %>%
+  kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 1Condition)",
+        digits = 4,
+        align = "c")
+
+best_params_table <- kable(head(best_params, 10), 
+                           caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+                           digits = 4)
+
+# Create the tables
+table1 <- head(results, 10) %>% 
+  kable(caption = " Grid Search Results for Simulated Karyotypes (SNU-668 Control Condition)",
+        digits = 4, align = "c")
+
+table2 <- head(best_params, 10) %>% 
+  kable(caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Control Profile",
+        digits = 4)
+
+```
+
+**Interpretation:** Table 10 illustrate top 10 optimized values of \(p\) which reflect the most plausible equal gain/loss rates that best reproduce the karyotype transition from early to late Glucose 1 in SNU-668 cells, based on minimizing the Manhattan distance to the observed late-phase profile.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_params$p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+# Step 2: Add 'treatment' column using mutate
+final_sim_control_f <- final_sim_df_f %>%
+  mutate(treatment = rep("Control", nrow(final_sim_df_f)))
+
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Control - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create heat matrix from simulated data
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))  # assuming chromosome columns are named V1 to V22
+
+# Define p value used (you must assign this earlier in your code)
+p_val <- best_params$p[1]
+
+# Plot heatmap for first 1000 cells
+plot_2<-pheatmap(
+  mat = heat_mat[1:1000, ],
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = sprintf("First 1000 Cells\nP(gain) = P(loss) = %.3f", p_val),
+  show_rownames = FALSE,
+  silent = T
+)
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Combine profiles into one data frame
+profile_df <- rbind(
+  data.frame(cell = "Early Glucose", chrom = names(late_glucose_profile), copy = colMeans(early_glucose_mat)),
+  data.frame(cell = "Late Glucose",  chrom = names(late_glucose_profile), copy = late_glucose_profile),
+  data.frame(cell = "Simulated",     chrom = names(late_glucose_profile), copy = colMeans(final_sim))
+)
+
+# Convert chromosome to factor to preserve ordering
+profile_df$chrom <- factor(profile_df$chrom, levels = paste0("V", 1:22))
+
+# Plot
+plot_3<- ggplot(profile_df, aes(x = chrom, y = copy, fill = cell, group = cell)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Karyotype Evolution Under Equal Gain/Loss Model",
+    subtitle = sprintf("Grid: p_gain = p_loss ∈ [%.3f – %.3f], Optimal p = %.3f", 
+                       min(results$p), max(results$p), p_val),
+    x = "Chromosome",
+    y = "Mean Copy Number"
+  ) +
+  scale_fill_manual(values = c("Early Glucose" = "#1f77b4", 
+                               "Late Glucose" = "#ff7f0e", 
+                               "Simulated" = "#2ca02c")) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+
+### Simulation Replicates and Variability Analysis - Mid search
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+# Step 1: Extract early and late control cell-level karyotypes
+early_glucose_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_glucose_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A10_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+late_glucose_profile_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G1_A10_seed") %>%
+  select(starts_with("V")) %>%
+as.matrix()
+
+set.seed(123)
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Step 4: Evaluate distances using equal p_gain and p_loss
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+set.seed(123)
+# Step 6: Final simulation using optimized equal probabilities
+best_p <- results %>% arrange(dist) %>% slice(1) %>% pull(p)
+
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+
+
+# Step 3: Run multiple replicate simulations using best_params
+set.seed(123)
+n_reps <- 10
+replicate_means <- matrix(NA, nrow = n_reps, ncol = ncol(early_glucose_mat))
+
+for (i in 1:n_reps) {
+  sim_data <- simulate_karyotypes(
+    start_pool = early_glucose_mat,
+    p = best_p[1] ,
+    n_cells = 1000,
+    time_steps = 10
+  )
+  replicate_means[i, ] <- colMeans(sim_data)
+}
+
+# Step 4: Compute pairwise distances between replicate profiles
+rep_dist_matrix <- as.matrix(dist(replicate_means, method = "manhattan"))
+
+# Step 5: Extract upper triangle distances as the test statistic
+pairwise_test_stat <- rep_dist_matrix[upper.tri(rep_dist_matrix)]
+
+# Step 6: Compute distance from each replicate to late-phase profile
+dist_to_late <- apply(replicate_means, 1, function(x) sum(abs(x - late_glucose_profile)))
+
+# Get summary statistics
+summary_pairwise <- summary(pairwise_test_stat)
+summary_to_late  <- summary(dist_to_late)
+
+p_grid_min <- min(p_seq)
+p_grid_max <- max(p_seq)
+best_p <- best_params$p[1]
+
+subtitle_text <- sprintf("Grid: P(gain) = P(loss) ∈ [%.3f, %.3f]; Optimal p = %.3f", 
+                         p_grid_min, p_grid_max, best_p)
+
+
+# Create long-form dataframe
+dist_df <- data.frame(
+  Value = c(pairwise_test_stat, dist_to_late),
+  Metric = rep(c("Pairwise Distances", "Distance to Late"), 
+               times = c(length(pairwise_test_stat), length(dist_to_late)))
+)
+
+# Extract best parameter values
+
+plot_4<-ggplot(dist_df, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(width = 0.4, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Variability of Simulated Karyotypes at Optimal Probability",
+    subtitle = subtitle_text,
+    x = NULL,
+    y = "Manhattan Distance"
+  ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r echo=FALSE, fig.height=14, fig.width=18, message=FALSE, warning=FALSE, out.width="100%"}
+# Combine the two heatmaps
+grid.arrange(plot_1, plot_2$gtable, plot_3, plot_4, ncol = 2)
+```
+
+**Figure 9:** shows the outcome of a mid-range grid search `(p ∈ [0.001, 0.020])` for Glucose 1, with the best fit at p = 0.005. While this grid yields slightly improved alignment with the late-phase profile compared to the linear grid (Figure 8), the average Manhattan distances remain high, indicating persistent mismatch. The heatmap reveals heterogeneous copy number patterns, and the bar plot highlights partial recapitulation on some chromosomes (V8, V15), but poor alignment on others (V9, V21). Thus, even at optimal p, the symmetric gain/loss model underperforms in capturing Glucose 1–induced karyotype evolution.
+
+
+
+```{R echo=FALSE, warning=FALSE}
+# Optional: Plot
+library(ggplot2)
+dist_df <- data.frame(Distance = dist_to_late, Replicate = paste0("Sim", 1:10))
+
+# Extract best parameters for display
+#p_gain_val <- round(best_params$p_gain, 3)
+#p_loss_val <- round(best_params$p_loss, 3)
+
+# Plot with annotation of best parameters
+ ggplot(dist_df, aes(x = Replicate, y = Distance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(dist_to_late), linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Distance from Simulated Glucose 1 Replicates to Late-Phase Profile",
+    y = "Manhattan Distance",
+    x = "Replicate",
+    subtitle = subtitle_text
+  )
+
+```
+
+**Figure 10:** This barplot shows the Manhattan distances between each simulated replicate (Glucose 1, mid-grid search with optimal p = 0.005) and the observed late-phase profile. While replicate distances are consistent (~4.9–5.1), they remain notably higher than those seen under control conditions, indicating poor convergence. This suggests that symmetric gain/loss transitions with p = 0.005 are insufficient to reproduce the Glucose 1-induced karyotype evolution, likely due to elevated chromosomal instability not captured by this model.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+rm(list = ls())
+```
+
+
+
+## 3.3 Glucose 2 Condition
+```{r echo=FALSE, message=FALSE, warning=FALSE, includelude=FALSE}
+
+db <- dbConnect(MariaDB(), dbname="CLONEID", 
+                host="cloneid.cswgogbb5ufg.us-east-1.rds.amazonaws.com", 
+                user="danielolofin",
+                  password="Karyotyping_Analysis")
+
+query <- "SELECT id, passaged_from_id1, passage, event, date, media from Passaging WHERE passaged_from_id1"
+mismatches <- dbGetQuery(db, query)
+
+```
+
+```{r include=FALSE}
+## this is the database containing all the data. I use R to work with it but if you have experience with SQL database interactions
+## you can access with any other software you like
+dbListTables(db)
+
+```
+
+```{r include=FALSE}
+dbListFields(db,"Perspective") ##karyotype data is in here.
+```
+
+```{r include=FALSE}
+dbListFields(db,"Passaging") ## a lot of the metadata is here
+#> dbListFields(db,"Passaging")
+```
+
+```{r include=FALSE}
+dbListFields(db,"Media") ## Media info, the id column here matches the media column inside passaging.#
+```
+
+
+
+```{r include=FALSE}
+## this is how to pull the karyotype data from the perspective table. For this you'll need to know the origin.
+## Perhaps vural can provide a list of all the origins that belong in the experiment. "Origin" maps to "id" field in the 
+## passaging table.
+
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+```
+
+```{r include=FALSE}
+# Single query to pull all relevant profiles
+q <- paste0("SELECT * FROM Perspective WHERE origin='SNU-668_G1_A10_seed' AND whichPerspective='GenomePerspective'")
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+# Convert each BLOB to a double vector
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+# Stack into a matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+```
+
+
+```{r include=FALSE}
+# Define origins and build query
+origins <- c(
+  "SNU-668_R1_A55_seedT1", "SNU-668_R3_A55_seedT1", "SNU-668_K1_A34_seedT1",
+  "SNU-668_K2_A34_seedT1", "SNU-668_K3_A34_seedT1", "HGC-27_RevG_A9-F_seed",
+  "HGC-27_RevG2_A7-F_seed", "SNU-668_G1_A4_seed", "SNU-668_G2_A4_seed",
+  "HGC-27_RevC_A45_seed", "SNU-668_RevG_A3_seed", "SNU-668_P2_A18k_seed",
+  "SNU-668_P0_A11K_seed", "SNU-668_r2_A55_seedT1", "SNU-668_G1_A10_seed",
+  "SNU-668_G2_A10_seed", "SNU-668_RevG_A10_seed", "HGC-27_G1_A9-F_seed",
+  "HGC-27_G2_A9_harvesT155", "HGC-27_G2_A9-F_seed", "HGC-27_G1_A9_harvesT155",
+  "HGC-27_RevG_A9_harvesT149", "HGC-27_RevG2_A8_seed", "MDA-MB-231_P_A2_harvest",
+  "HGC-27_C_A45_seed", "SNU-668_RevC_A27_seed", "SNU-668_C_A24_seed",
+  "SNU-668_C_A4_seed", "SNU-668_RevC_A3_seed", "MDA-MB-231_RPMI_A12_VT2_seed",
+  "SNU-668_P1_A18K_seed", "SNU-668_O1_A3_exp_seedT4", "SNU-668_O2_A3_exp_seedT4",
+  "HGC-27_P1_A18K_harvest", "HGC-27_P2_A18K_harvest", "SUM159_NLS_4N_O1_A7K_harvest",
+  "SUM159_NLS_2N_O1_A7K_harvest", "SUM-159_NLS_4N_A5M_K_harvest",
+  "SUM159_NLS_4N_O2_A7K_harvest", "SUM159_NLS_2N_O2_A7K_harvest",
+  "SUM-159_NLS_2N_A7M_K_harvest"
+)
+
+
+## Passaging table
+q <- paste0("SELECT * FROM Passaging")
+rs <- dbSendQuery(db, q)
+res_passage <- dbFetch(rs)
+dbClearResult(rs)
+
+names(res_passage)[1] <- "replicate_id"
+
+
+origin_clause <- paste0("'", origins, "'", collapse = ", ")
+ q <- paste0("SELECT * FROM Perspective WHERE origin IN (", origin_clause, ") AND whichPerspective='GenomePerspective'")
+
+
+
+# Fetch data from the database
+if (!dbIsValid(db)) {
+  db <- dbConnect(...)  
+}
+rs <- dbSendQuery(db, q)
+res <- dbFetch(rs)
+dbClearResult(rs)
+
+#  Decode the BLOBs into double vectors
+kvecs <- lapply(res$profile, function(p) {
+  raw_vec <- p
+  readBin(raw_vec, what = "double", n = length(raw_vec) / 8, endian = "big")
+})
+
+```
+
+
+
+```{r include=FALSE}
+# Building the matrix
+kmat <- do.call(rbind, kvecs)
+rownames(kmat) <- res$cloneID
+
+
+
+res$treatment_group <- case_when(
+  grepl("_G1|_G2", res$origin) ~ "Glucose",
+  grepl("_K1|_K2|_K3|_K", res$origin) ~ "K_Condition",
+  grepl("_P1|_P2|_P0|_P", res$origin) ~ "Phosphate",
+  grepl("_R1|_R2|_R3|_r2", res$origin) ~ "R_Condition",
+  grepl("_O1|_O2", res$origin) ~ "Oxygen",
+  grepl("_RevC", res$origin) ~ "Reversine_Control",
+  grepl("_RevG|_RevG2", res$origin) ~ "Reversine_Glucose",
+  grepl("_C", res$origin) ~ "Control",
+  grepl("_RPMI", res$origin) ~ "RPMI",
+  TRUE ~ NA_character_
+)
+
+
+# Seperating SNU_168 by number of their chomosome
+res %>% 
+    mutate(sampleSource = ifelse(str_detect(alias, "N4") & sampleSource == "SUM-159",
+                               "SUM-159-4N",
+                               sampleSource)) -> res
+
+
+
+
+# Combining matrix and group metadata
+karyo_df <- as.data.frame(kmat)
+karyo_df$treatment <- res$treatment
+karyo_df$cloneID <- res$cloneID
+karyo_df$line<- res$sampleSource
+karyo_df$replicate_id<- res$origin
+
+unique(karyo_df$replicate_id)
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# Joining the passaging data 
+joined_data <- left_join(karyo_df, res_passage, by = "replicate_id")
+
+
+# Creating a new data set for MDAMB231
+joined_data %>% 
+  filter(cellLine == "SNU-668" & treatment == "Glucose") -> SNU_668_Gl
+
+round(SNU_668_Gl$date[64] %--% SNU_668_Gl$date[1]/months(1))
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+# Step 1: Extract early and late control cell-level karyotypes
+early_glucose_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_glucose_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A10_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+
+late_glucose_2_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A10_seed") %>%
+  select(starts_with("V")) %>%
+as.matrix()
+
+# Step 2: Define simulation function (randomly sample start profiles from early pool)
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Safe probability vector
+      gain_prob <- as.numeric(p)
+      loss_prob <- as.numeric(p)
+      no_change_prob <- max(0, 1 - gain_prob - loss_prob)
+
+      probs <- c(gain_prob, loss_prob, no_change_prob)
+
+      # Normalize just in case they don’t sum to 1 due to rounding
+      probs <- probs / sum(probs)
+
+      # Sample changes for each chromosome
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+
+      # Update karyotype (ensure no negative copy number)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+```
+
+
+### Option 1: Linear Sequence (for basic grid search)
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p_seq <- p_seq <- seq(0.001, 0.05, by = 0.001) # This gives values from 1e-10 to 1
+param_grid_equal <- expand.grid(p = p_seq)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Run simulation only for equal gain/loss probabilities
+#luate all parameter combinations (minimize distance to late control)
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+
+head(results,10) %>% kableExtra::kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 2 Condition)",
+        digits = 4,
+        align = "c") 
+
+```
+
+**Interpretation:** The grid search explored a range of symmetric transition probabilities \(p\), where the probabilities of chromosome gain and loss were constrained to be equal (\( p_{\text{gain}} = p_{\text{loss}} = p \). This constraint reduced the dimensionality of the parameter space and enabled a more computationally efficient search. For each candidate value of \( p \), we simulated karyotype evolution over 10 discrete time steps (approximately 4 months), starting from early-phase control cells. 
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Define probability range (e.g., used in your grid search)
+p_min <- min(results$p)
+p_max <- max(results$p)
+
+# Identify optimal parameter (minimum distance)
+best_row <- results %>% filter(dist == min(dist))
+
+# Plot with annotation
+plot_1<-ggplot(results, aes(x = p, y = dist)) +
+  geom_line(size = 1.2, color = "#440154FF") +
+  geom_point(size = 2, color = "#440154FF") +
+  geom_point(data = best_row, aes(x = p, y = dist), color = "red", size = 3) +
+  geom_text(
+    data = best_row,
+    aes(x = p, y = dist, label = sprintf("Optimal p = %.3f", p)),
+    vjust = -1,
+    hjust = 0.5,
+    color = "red",
+    size = 4
+  ) +
+  labs(
+    title = sprintf("Grid Search for Symmetric Transition Probability (p ∈ [%.3f, %.3f])", min(results$p), max(results$p)),
+    subtitle = "Evaluating Simulation Fit via Manhattan Distance to Late Glucose 2 Profile",
+    x = "P(gain) = P(loss)",
+    y = "Manhattan Distance"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+# Display table using kable
+kableExtra::kable(head(best_params,10), caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose Profile",
+                  digits = 4,)
+
+results_table <- head(results, 10) %>%
+  kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 2 Condition)",
+        digits = 4,
+        align = "c")
+
+best_params_table <- kable(head(best_params, 10), 
+                           caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose 2 Profile",
+                           digits = 4)
+
+# Create the tables
+table1 <- head(results, 10) %>% 
+  kable(caption = " Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 2 Condition)",
+        digits = 4, align = "c")
+
+table2 <- head(best_params, 10) %>% 
+  kable(caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose 2 Profile",
+        digits = 4)
+
+```
+
+**Interpretation:** Table 12 illustrate top 10 optimized values of \(p\) which reflect the most plausible equal gain/loss rates that best reproduce the karyotype transition from early to late Glucose 2 in SNU-668 cells, based on minimizing the Manhattan distance to the observed late-phase profile.
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_params$p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+# Step 2: Add 'treatment' column using mutate
+final_sim_control_f <- final_sim_df_f %>%
+  mutate(treatment = rep("Control", nrow(final_sim_df_f)))
+
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Glucose 2 - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create heat matrix from simulated data
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))  # assuming chromosome columns are named V1 to V22
+
+# Define p value used (you must assign this earlier in your code)
+p_val <- best_params$p[1]
+
+# Plot heatmap for first 1000 cells
+plot_2<-pheatmap(
+  mat = heat_mat[1:1000, ],
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = sprintf("First 1000 Cells\nP(gain) = P(loss) = %.3f", p_val),
+  show_rownames = FALSE,
+  silent = T
+)
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Combine profiles into one data frame
+profile_df <- rbind(
+  data.frame(cell = "Early Glucose", chrom = names(late_glucose_profile), copy = colMeans(early_glucose_mat)),
+  data.frame(cell = "Late Glucose",  chrom = names(late_glucose_profile), copy = late_glucose_profile),
+  data.frame(cell = "Simulated",     chrom = names(late_glucose_profile), copy = colMeans(final_sim))
+)
+
+# Convert chromosome to factor to preserve ordering
+profile_df$chrom <- factor(profile_df$chrom, levels = paste0("V", 1:22))
+
+# Plot
+plot_3<- ggplot(profile_df, aes(x = chrom, y = copy, fill = cell, group = cell)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Karyotype Evolution Under Equal Gain/Loss Model",
+    subtitle = sprintf("Grid: p_gain = p_loss ∈ [%.3f – %.3f], Optimal p = %.3f", 
+                       min(results$p), max(results$p), p_val),
+    x = "Chromosome",
+    y = "Mean Copy Number"
+  ) +
+  scale_fill_manual(values = c("Early Glucose" = "#1f77b4", 
+                               "Late Glucose" = "#ff7f0e", 
+                               "Simulated" = "#2ca02c")) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+
+### Simulation Replicates and Variability An alysis
+o assess the robustness of the model for Glucose 2, we performed replicate simulations using the optimized symmetric transition probability. Variability was quantified using pairwise Manhattan distances between replicate means, capturing stochastic effects. Additionally, three successive refinements of the parameter grid were conducted to ensure that the chosen probability reliably captured the late-phase Glucose 2 karyotype profile, confirming the stability and biological plausibility of the model fit.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Step 1: Extract early and late control cell-level karyotypes
+early_glucose_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_glucose_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A10_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+
+late_glucose_2_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A10_seed") %>%
+  select(starts_with("V")) %>%
+as.matrix()
+
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+set.seed(123)
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Step 4: Evaluate distances using equal p_gain and p_loss
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+set.seed(123)
+# Step 6: Final simulation using optimized equal probabilities
+best_p <- results %>% arrange(dist) %>% slice(1) %>% pull(p)
+
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+
+
+# Step 3: Run multiple replicate simulations using best_params
+set.seed(123)
+n_reps <- 10
+replicate_means <- matrix(NA, nrow = n_reps, ncol = ncol(early_glucose_mat))
+
+for (i in 1:n_reps) {
+  sim_data <- simulate_karyotypes(
+    start_pool = early_glucose_mat,
+    p = best_p[1] ,
+    n_cells = 1000,
+    time_steps = 10
+  )
+  replicate_means[i, ] <- colMeans(sim_data)
+}
+
+# Step 4: Compute pairwise distances between replicate profiles
+rep_dist_matrix <- as.matrix(dist(replicate_means, method = "manhattan"))
+
+# Step 5: Extract upper triangle distances as the test statistic
+pairwise_test_stat <- rep_dist_matrix[upper.tri(rep_dist_matrix)]
+
+# Step 6: Compute distance from each replicate to late-phase profile
+dist_to_late <- apply(replicate_means, 1, function(x) sum(abs(x - late_glucose_profile)))
+
+# Get summary statistics
+summary_pairwise <- summary(pairwise_test_stat)
+summary_to_late  <- summary(dist_to_late)
+
+p_grid_min <- min(p_seq)
+p_grid_max <- max(p_seq)
+best_p <- best_params$p[1]
+
+subtitle_text <- sprintf("Grid: P(gain) = P(loss) ∈ [%.3f, %.3f]; Optimal p = %.3f", 
+                         p_grid_min, p_grid_max, best_p)
+
+
+# Create long-form dataframe
+dist_df <- data.frame(
+  Value = c(pairwise_test_stat, dist_to_late),
+  Metric = rep(c("Pairwise Distances", "Distance to Late"), 
+               times = c(length(pairwise_test_stat), length(dist_to_late)))
+)
+
+# Extract best parameter values
+
+plot_4<-ggplot(dist_df, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(width = 0.4, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Variability of Simulated Karyotypes at Optimal Probability",
+    subtitle = subtitle_text,
+    x = NULL,
+    y = "Manhattan Distance"
+  ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r echo=FALSE, fig.height=14, fig.width=18, message=FALSE, warning=FALSE, out.width="100%"}
+# Combine the two heatmaps
+grid.arrange(plot_1, plot_2$gtable, plot_3, plot_4, ncol = 2)
+```
+
+**Figure 11:** The Glucose 2 linear grid search (optimal p = 0.050) reveals that even at the highest symmetric transition rate, simulated karyotypes remain poorly aligned with late-phase profiles (high Manhattan distances). Although the simulation captures elevated chromosomal variability (heatmap, barplot), the boxplot confirms persistent divergence from the late Glucose 2 state. This indicates that Glucose 2 induces strong instability exceeding what symmetric gain/loss alone can explain.
+
+
+
+```{R echo=FALSE, warning=FALSE}
+# Optional: Plot
+library(ggplot2)
+dist_df <- data.frame(Distance = dist_to_late, Replicate = paste0("Sim", 1:10))
+
+# Extract best parameters for display
+#p_gain_val <- round(best_params$p_gain, 3)
+#p_loss_val <- round(best_params$p_loss, 3)
+
+# Plot with annotation of best parameters
+ ggplot(dist_df, aes(x = Replicate, y = Distance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(dist_to_late), linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Distance from Simulated Glucose 2 Replicates to Late-Phase Profile",
+    y = "Manhattan Distance",
+    x = "Replicate",
+    subtitle = subtitle_text
+  )
+
+```
+
+**Figure 12:** Most replicates fall near the red dashed reference line, indicating consistent simulation performance. While some replicates slightly exceed or fall below the late-phase mean distance, the overall variability is low, and distances remain tightly clustered around ~4.9–5.0. This suggests that at high symmetric transition probability (p = 0.050), the simulations moderately recapitulate the late Glucose 2 karyotype, but improvement over lower p-values is marginal.
+
+### Option 3: Mid-Range Balanced Search
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p_seq <- seq(0.0005, 0.02, by = 0.0005)
+param_grid_equal <- expand.grid(p = p_seq)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Run simulation only for equal gain/loss probabilities
+#luate all parameter combinations (minimize distance to late control)
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+
+head(results,10) %>% kableExtra::kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 2 Condition)",
+        digits = 4,
+        align = "c") 
+
+```
+
+**Interpretation:** The grid search explored a range of symmetric transition probabilities \(p\), where the probabilities of chromosome gain and loss were constrained to be equal (\( p_{\text{gain}} = p_{\text{loss}} = p \). This constraint reduced the dimensionality of the parameter space and enabled a more computationally efficient search. For each candidate value of \( p \), we simulated karyotype evolution over 10 discrete time steps (approximately 4 months), starting from early-phase control cells. 
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Define probability range (e.g., used in your grid search)
+p_min <- min(results$p)
+p_max <- max(results$p)
+
+# Identify optimal parameter (minimum distance)
+best_row <- results %>% filter(dist == min(dist))
+
+# Plot with annotation
+plot_1<-ggplot(results, aes(x = p, y = dist)) +
+  geom_line(size = 1.2, color = "#440154FF") +
+  geom_point(size = 2, color = "#440154FF") +
+  geom_point(data = best_row, aes(x = p, y = dist), color = "red", size = 3) +
+  geom_text(
+    data = best_row,
+    aes(x = p, y = dist, label = sprintf("Optimal p = %.3f", p)),
+    vjust = -1,
+    hjust = 0.5,
+    color = "red",
+    size = 4
+  ) +
+  labs(
+    title = sprintf("Grid Search for Symmetric Transition Probability (p ∈ [%.3f, %.3f])", min(results$p), max(results$p)),
+    subtitle = "Evaluating Simulation Fit via Manhattan Distance to Late Glucose 2 Profile",
+    x = "P(gain) = P(loss)",
+    y = "Manhattan Distance"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Step 5: Find optimal parameters
+best_params <- results %>% arrange(dist) %>% slice(1)
+# Display table using kable
+kableExtra::kable(head(best_params,10), caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose Profile",
+                  digits = 4,)
+
+results_table <- head(results, 10) %>%
+  kable(caption = "Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 2 Condition)",
+        digits = 4,
+        align = "c")
+
+best_params_table <- kable(head(best_params, 10), 
+                           caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose 2 Profile",
+                           digits = 4)
+
+# Create the tables
+table1 <- head(results, 10) %>% 
+  kable(caption = " Grid Search Results for Simulated Karyotypes (SNU-668 Glucose 2 Condition)",
+        digits = 4, align = "c")
+
+table2 <- head(best_params, 10) %>% 
+  kable(caption = "Optimal Gain and Loss Probabilities Minimizing Distance to Late Glucose 2 Profile",
+        digits = 4)
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+
+# Step 6: Final simulation using optimized probabilities
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_params$p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+# Step 2: Add 'treatment' column using mutate
+final_sim_control_f <- final_sim_df_f %>%
+  mutate(treatment = rep("Control", nrow(final_sim_df_f)))
+
+# Step 7: Visualize distribution (Corrected pivot_longer)
+sim_df <- as.data.frame(final_sim)
+sim_df$cell <- paste0("Cell_", 1:nrow(sim_df))
+
+sim_long <- sim_df %>%
+  select(-cell) %>%
+  pivot_longer(cols = everything(), names_to = "chrom", values_to = "copy")
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+ggplot(sim_long, aes(x = copy)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~chrom, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Simulated Chromosome Copy Number After 4 Months (Glucose 2 - SNU-668)",
+       x = "Copy Number", y = "Frequency")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create heat matrix from simulated data
+heat_mat <- sim_df %>%
+  mutate(cell = paste0("Cell_", 1:nrow(.))) %>%
+  column_to_rownames("cell") %>%
+  select(paste0("V", 1:22))  # assuming chromosome columns are named V1 to V22
+
+# Define p value used (you must assign this earlier in your code)
+p_val <- best_params$p[1]
+
+# Plot heatmap for first 1000 cells
+plot_2<-pheatmap(
+  mat = heat_mat[1:1000, ],
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = sprintf("First 1000 Cells\nP(gain) = P(loss) = %.3f", p_val),
+  show_rownames = FALSE,
+  silent = T
+)
+
+```
+
+
+
+```{r echo=FALSE, warning=FALSE}
+set.seed(123)
+# Combine profiles into one data frame
+profile_df <- rbind(
+  data.frame(cell = "Early Glucose", chrom = names(late_glucose_profile), copy = colMeans(early_glucose_mat)),
+  data.frame(cell = "Late Glucose",  chrom = names(late_glucose_profile), copy = late_glucose_profile),
+  data.frame(cell = "Simulated",     chrom = names(late_glucose_profile), copy = colMeans(final_sim))
+)
+
+# Convert chromosome to factor to preserve ordering
+profile_df$chrom <- factor(profile_df$chrom, levels = paste0("V", 1:22))
+
+# Plot
+plot_3<- ggplot(profile_df, aes(x = chrom, y = copy, fill = cell, group = cell)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Karyotype Evolution Under Equal Gain/Loss Model",
+    subtitle = sprintf("Grid: p_gain = p_loss ∈ [%.3f – %.3f], Optimal p = %.3f", 
+                       min(results$p), max(results$p), p_val),
+    x = "Chromosome",
+    y = "Mean Copy Number"
+  ) +
+  scale_fill_manual(values = c("Early Glucose" = "#1f77b4", 
+                               "Late Glucose" = "#ff7f0e", 
+                               "Simulated" = "#2ca02c")) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+
+### Simulation Replicates and Variability Analysis
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Step 1: Extract early and late control cell-level karyotypes
+early_glucose_mat <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A4_seed") %>%
+  select(starts_with("V")) %>%
+  as.matrix()
+
+late_glucose_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A10_seed") %>%
+  select(starts_with("V")) %>%
+  summarise(across(everything(), mean, na.rm = TRUE)) %>%
+  unlist()
+
+
+late_glucose_2_profile <- karyo_df %>%
+  filter(replicate_id == "SNU-668_G2_A10_seed") %>%
+  select(starts_with("V")) %>%
+as.matrix()
+
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+set.seed(123)
+# Step 2: Define simulation function assuming p_gain == p_loss
+simulate_karyotypes <- function(start_pool, p, n_cells = 1000, time_steps = 10) {
+  n_chrom <- ncol(start_pool)
+  karyo_list <- vector("list", n_cells)
+
+  for (i in 1:n_cells) {
+    karyo <- start_pool[sample(1:nrow(start_pool), 1, replace = TRUE), ]
+
+    for (t in 1:time_steps) {
+      # Since p_gain == p_loss = p
+      p_gain <- p_loss <- as.numeric(p)
+      p_no_change <- max(0, 1 - p_gain - p_loss)
+
+      probs <- c(p_gain, p_loss, p_no_change)
+
+      # Normalize in case sum != 1 due to floating point issues
+      if (any(is.na(probs)) || sum(probs) == 0) {
+        probs <- c(1/3, 1/3, 1/3)
+      } else {
+        probs <- probs / sum(probs)
+      }
+
+      change <- sample(c(1, -1, 0), size = n_chrom, replace = TRUE, prob = probs)
+      karyo <- pmax(0, karyo + change)
+    }
+
+    karyo_list[[i]] <- karyo
+  }
+
+  do.call(rbind, karyo_list)
+}
+
+
+set.seed(123)
+# Step 4: Evaluate all parameter combinations (minimize distance to late control)
+# Step 4: Evaluate distances using equal p_gain and p_loss
+results <- param_grid_equal %>%
+  rowwise() %>%
+  mutate(
+    dist = {
+      sim <- simulate_karyotypes(
+        start_pool = early_glucose_mat,
+        p = p,
+        n_cells = 1000,
+        time_steps = 10
+      )
+      sim_profile <- colMeans(sim)
+      sum(abs(sim_profile - late_glucose_profile))  # Manhattan distance
+    }
+  )
+
+set.seed(123)
+# Step 6: Final simulation using optimized equal probabilities
+best_p <- results %>% arrange(dist) %>% slice(1) %>% pull(p)
+
+final_sim <- simulate_karyotypes(
+  start_pool = early_glucose_mat,
+  p = best_p[1],
+  n_cells = 1000,
+  time_steps = 10
+)
+
+final_sim_df_f <- as.data.frame(final_sim)
+
+
+
+# Step 3: Run multiple replicate simulations using best_params
+set.seed(123)
+n_reps <- 10
+replicate_means <- matrix(NA, nrow = n_reps, ncol = ncol(early_glucose_mat))
+
+for (i in 1:n_reps) {
+  sim_data <- simulate_karyotypes(
+    start_pool = early_glucose_mat,
+    p = best_p[1] ,
+    n_cells = 1000,
+    time_steps = 10
+  )
+  replicate_means[i, ] <- colMeans(sim_data)
+}
+
+# Step 4: Compute pairwise distances between replicate profiles
+rep_dist_matrix <- as.matrix(dist(replicate_means, method = "manhattan"))
+
+# Step 5: Extract upper triangle distances as the test statistic
+pairwise_test_stat <- rep_dist_matrix[upper.tri(rep_dist_matrix)]
+
+# Step 6: Compute distance from each replicate to late-phase profile
+dist_to_late <- apply(replicate_means, 1, function(x) sum(abs(x - late_glucose_profile)))
+
+# Get summary statistics
+summary_pairwise <- summary(pairwise_test_stat)
+summary_to_late  <- summary(dist_to_late)
+
+p_grid_min <- min(p_seq)
+p_grid_max <- max(p_seq)
+best_p <- best_params$p[1]
+
+subtitle_text <- sprintf("Grid: P(gain) = P(loss) ∈ [%.3f, %.3f]; Optimal p = %.3f", 
+                         p_grid_min, p_grid_max, best_p)
+
+
+# Create long-form dataframe
+dist_df <- data.frame(
+  Value = c(pairwise_test_stat, dist_to_late),
+  Metric = rep(c("Pairwise Distances", "Distance to Late"), 
+               times = c(length(pairwise_test_stat), length(dist_to_late)))
+)
+
+# Extract best parameter values
+
+plot_4<-ggplot(dist_df, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(width = 0.4, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Variability of Simulated Karyotypes at Optimal Probability",
+    subtitle = subtitle_text,
+    x = NULL,
+    y = "Manhattan Distance"
+  ) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r echo=FALSE, fig.height=14, fig.width=18, message=FALSE, warning=FALSE, out.width="100%"}
+# Combine the two heatmaps
+grid.arrange(plot_1, plot_2$gtable, plot_3, plot_4, ncol = 2)
+```
+
+**Figure 13:** This figure summarizes the results of a mid-range linear grid search `(p ∈ [0.001, 0.020])` for Glucose 2, identifying an optimal symmetric gain/loss probability of p = 0.005. At this setting, simulated profiles achieved one of the lowest Manhattan distances to the late Glucose 2 profile (~4.6), indicating improved fit compared to other grid points. The heatmap of the first 1000 simulated cells reveals structured variability, reflecting key chromosomal features seen in the late-stage profile. The mean copy number comparison shows that the simulated karyotypes closely mirror late Glucose 2, particularly across highly altered chromosomes. Additionally, low pairwise distances and minimal spread in replicate-to-late distances demonstrate consistent simulation behavior across runs. Overall, the optimal parameter yields a biologically plausible and reproducible approximation of late-phase Glucose 2 karyotype evolution.
+
+
+
+```{R echo=FALSE, warning=FALSE}
+# Optional: Plot
+library(ggplot2)
+dist_df <- data.frame(Distance = dist_to_late, Replicate = paste0("Sim", 1:10))
+
+# Extract best parameters for display
+#p_gain_val <- round(best_params$p_gain, 3)
+#p_loss_val <- round(best_params$p_loss, 3)
+
+# Plot with annotation of best parameters
+ ggplot(dist_df, aes(x = Replicate, y = Distance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(dist_to_late), linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Distance from Simulated Glucose 2 Replicates to Late-Phase Profile",
+    y = "Manhattan Distance",
+    x = "Replicate",
+    subtitle = subtitle_text
+  )
+
+```
+
+**Figure 14:** The bar plot displays Manhattan distances between 10 independently simulated Glucose 2 replicates (under optimal symmetric transition probability p = 0.005) and the late-phase Glucose 2 profile. Most replicates fall closely around the benchmark distance (indicated by the red dashed line), demonstrating strong consistency in simulation outcomes. This tight clustering confirms that the selected transition probability reliably reproduces late-phase karyotypic patterns across independent runs, supporting model robustness and parameter appropriateness for Glucose 2 under mid-grid conditions.
+
+
+
+## Discussion
+
+This study employed a discrete-time stochastic model to simulate karyotype evolution in the SNU-668 cancer cell line under three distinct environmental conditions: Control, Glucose 1 deprivation, and Glucose 2 deprivation. The model assumed independent chromosomal gain and loss events across 22 autosomes, constrained by symmetric transition probabilities (\(p_{\text{gain}} = p_{\text{loss}} = p\)). Grid searches: linear, logarithmic, and mid-range were conducted to identify optimal values of \( p \) that minimized the Manhattan distance between simulated average karyotypes and observed late-phase profiles.
+
+Under the Control condition, the model demonstrated strong agreement between simulations and experimental data. Multiple replicates clustered tightly around the late-phase karyotype, and optimal \( p \) values consistently yielded low Manhattan distances, indicating the model's robustness and reliability in capturing chromosomal drift under minimal selective pressure. This suggests that under steady state growth, karyotypic evolution can be reasonably approximated by low-rate symmetric transitions.
+
+For Glucose 1, however, the model exhibited poor convergence regardless of grid type or parameter tuning. Simulated replicates failed to recapitulate the observed late-phase profile, with consistently high Manhattan distances across optimal \( p \) values. This discrepancy implies that Glucose 1 treatment induces more complex karyotypic dynamics possibly involving condition specific selection, asymmetry in gain/loss probabilities that are not captured by a Markovian process.
+
+Glucose 2 simulations showed marginally improved convergence compared to Glucose 1 but still underperformed relative to Control. The variability and elevated distance metrics suggest moderate chromosomal instability in response to this condition.
+
+## Conclusion
+
+The discrete-time Markov model with symmetric gain/loss transitions performs well under the Control condition, effectively simulating chromosomal evolution over time. However, its explanatory power diminishes under stress induced conditions like Glucose 1 and Glucose 2. These findings underscore the necessity for more nuanced models that account for asymmetric transitions, condition specific selective pressures, and potentially coordinated chromosomal alterations.
+
+## Future Directions
+
+Future work should focus on the following extensions to improve model fidelity:
+
+- Introduce asymmetric transition probabilities (\( p_{\text{gain}} \neq p_{\text{loss}} \)) to reflect directional chromosomal changes under selective stress.
+- Incorporate chromosome-specific transition matrices informed by empirical gain/loss frequencies.
+- Integrate lineage-tracing data to capture clonal evolution trajectories.
+- Explore hybrid models combining mechanistic simulations with machine learning techniques to learn transition structures from data.
+- Apply this framework to additional cell lines.

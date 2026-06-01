@@ -1,0 +1,82 @@
+---
+title: "Problem 5"
+author: "Moshood A. Garuba"
+date: "2025-05-10"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 5
+
+\textbf{Problem 5.1 to 5.4 – Polynomial Regression Transformation}
+
+\textbf{Given model:}
+\[
+y_i = b_0 + b_1 x^* + b_{11} (x^*)^2
+\quad \text{where } x^* = x - \bar{x}
+\]
+
+\textbf{Expanding:}
+\[
+\begin{aligned}
+y_i &= b_0 + b_1(x - \bar{x}) + b_{11}(x - \bar{x})^2 \\
+    &= b_0 + b_1(x - \bar{x}) + b_{11}(x^2 - 2x\bar{x} + \bar{x}^2) \\
+    &= b_0 - b_1\bar{x} + b_{11}\bar{x}^2 + b_1 x - 2b_{11} x \bar{x} + b_{11} x^2 \\
+    &= (b_0 - b_1\bar{x} + b_{11}\bar{x}^2) + (b_1 - 2b_{11} \bar{x}) x + b_{11} x^2
+\end{aligned}
+\]
+
+\textbf{Rewritten model:}
+\[
+y_i = b_0' + b_1' x + b_{11}' x^2
+\]
+
+\textbf{Answers:}
+\begin{align*}
+\text{5.1) } b_0' &= b_0 - b_1 \bar{x} + b_{11} \bar{x}^2 \\
+\text{5.2) } b_1' &= b_1 - 2 b_{11} \bar{x} \\
+\text{5.3) } b_{11}' &= b_{11} \\
+\text{5.4) Transformed Model: } y_i &= (b_0 - b_1\bar{x} + b_{11}\bar{x}^2) + (b_1 - 2b_{11} \bar{x}) x + b_{11} x^2
+\end{align*}
+
+
+# Bonus Question 
+
+## For the GLM and more precisely the logistic regression model, write down an example for the link function and report the LOGIT model.
+
+Consider a binary outcome variable \( Y \in \{0, 1\} \), and let \( x \) be a single predictor variable. We define the probability of success (i.e., \( Y = 1 \)) as:
+
+\[
+\pi(x) = \mathbb{P}(Y = 1 \mid x)
+\]
+
+\subsection*{1. Link Function (Logit Form)}
+
+In logistic regression, the logit link function connects the linear predictor to the probability \( \pi(x) \):
+
+\[
+\log\left( \frac{\pi(x)}{1 - \pi(x)} \right) = \beta_0 + \beta_1 x
+\]
+
+
+\subsection*{2. Logistic Regression Model}
+
+Solving the equation for \( \pi(x) \), we obtain the **logistic function**:
+
+\[
+\pi(x) = \frac{e^{\beta_0 + \beta_1 x}}{1 + e^{\beta_0 + \beta_1 x}}
+\]
+
+
+\subsection*{3. Summary}
+
+The logistic regression model with one predictor in both forms:
+
+\begin{align*}
+\textbf{Logit form:} \quad & \log\left( \frac{\pi(x)}{1 - \pi(x)} \right) = \beta_0 + \beta_1 x \\
+\textbf{Exponential form:} \quad & \pi(x) = \frac{e^{\beta_0 + \beta_1 x}}{1 + e^{\beta_0 + \beta_1 x}}
+\end{align*}
+

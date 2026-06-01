@@ -1,0 +1,376 @@
+---
+title: "ARIMA"
+author: "Daniel Olofin"
+date: "2026-03-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading of packages
+
+```{r}
+library(readxl)
+library(readr)
+library(keras)
+library(tensorflow)
+library(viridis)
+library(scales)
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(keras)
+library(tensorflow)
+library(purrr)
+library(abind)
+library(patchwork)
+library(forecast)
+```
+
+
+## Import Dataset
+
+```{r}
+HiV_data <- read_xlsx("Hivdata.xlsx")
+HiV_data -> df
+```
+
+
+## Data Cleaning, Feature Engineering and Basics Statistics
+
+```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
+
+# Rename for convenience
+df <- HiV_data
+
+# Handle Missing YEAR Values
+df <- df %>%
+  tidyr::fill(YEAR)
+
+# Data Cleaning and Feature Engineering
+
+df <- df %>%
+  tidyr::fill(YEAR) %>%                                   # fill down missing YEARs
+  mutate(
+    Month = str_trim(Month),                       # Remove leading/trailing spaces
+    Month = str_to_upper(Month),                   # Convert month names to uppercase
+    Month_num = match(Month, toupper(month.abb)),  
+    date = make_date(YEAR, Month_num, 1)           # Create full date variable (YYYY-MM-DD)
+  )
+
+
+# Summarize HIV Prevalence by Year
+df_sum <- df %>%
+  group_by(YEAR) %>%
+  summarise(total = sum(prevalence, na.rm = TRUE)) 
+
+# Identify the year with the highest total
+max_year <- df_sum %>%
+  filter(total == max(total)) %>%
+  pull(YEAR)
+
+```
+
+
+## Data Visulization
+
+```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
+
+# Visualize annual totals 
+p <- ggplot(df_sum, aes(x = factor(YEAR), y = total,
+                   fill = ifelse(YEAR == max_year, "Highest", "Other"))) +
+  geom_bar(stat = "identity", width = 0.7) +
+  geom_text(aes(label = round(total, 2)), vjust = -0.3, size = 3) +
+  scale_fill_manual(values = c("Highest" = "black", "Other" = "steelblue")) +
+  labs(
+  title = "Annual Aggregation of HIV Prevalence for Temporal Modeling (2010–2021)",
+  x = "Year",
+  y = NULL
+) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    legend.position = "none",
+    plot.title = element_text(face = "bold")
+  ) 
+
+ggsave(
+  filename = "p1.png",
+  plot = p,
+  width = 8,        # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution (suitable for publication)
+)
+
+# Monthly HIV Prevalence Plot 
+p2 <- ggplot(df, aes(x = Month_num, y = prevalence, group = YEAR)) +
+  geom_line(color="blue") +
+  geom_point(color="red") +
+  facet_wrap(~ YEAR, ncol = 3, scales = "free_y") + 
+  theme_minimal(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1)) +
+
+ labs(
+  title = "Temporal Dynamics of Monthly HIV Prevalence (2010–2021)",
+  x = "Month",
+  y = "Prevalence"
+)
+
+ggsave(
+  filename = "p2.png",
+  plot = p2,
+  width = 8,        # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution (suitable for publication)
+)
+
+
+# Plot: Temporal Trajectory of HIV Prevalence
+p3 <- ggplot(df, aes(x = date, y = prevalence)) +
+  geom_line(color = "blue") +
+geom_point(color="red") +
+  theme_minimal(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1)) +
+  labs(
+  title = "Temporal Trajectory of HIV Prevalence (2010–2021)",
+  x = "Date",
+  y = "Prevalence"
+)
+
+ggsave(
+  filename = "p3.png",
+  plot = p3,
+  width = 8,        # width in inches
+  height = 5,       # height in inches
+  dpi = 300         # resolution (suitable for publication)
+)
+```
+
+
+## Long Short-Term Memory Modeling
+
+```{r}
+# --- Reproducibility ---
+set.seed(123)
+tensorflow::tf$random$set_seed(123)
+
+# --- 0) Data: ensure date is Date and sorted monthly ---
+stopifnot(all(c("YEAR","Month","prevalence","Month_num","date") %in% names(df)))
+df <- df %>%
+  mutate(date = as.Date(date)) %>%
+  arrange(date)
+
+# Keep only modeling columns
+df <- df %>% select(date, prevalence)
+
+
+# --- Ensure date column and sort ---
+df <- df %>%
+  mutate(date = as.Date(date)) %>%
+  arrange(date) %>%
+  select(date, prevalence)
+
+stopifnot(is.numeric(df$prevalence), inherits(df$date, "Date"))
+
+
+```
+
+
+## Create Differenced Series - Differencing helps to make the time series stationary — good for LSTM training.
+```{r}
+# Anchor the original (level) series once
+Series <- as.numeric(df$prevalence)
+
+
+# Difference the prevalence
+diffed <- diff(df$prevalence, differences = 1)
+
+
+# Replace NA with 0 for first differenced value 
+diffed <- c(0, diffed)
+
+```
+
+
+## Apply Your Lag Function
+```{r}
+lag_transform <- function(x, k = 1) {
+  lagged = c(rep(NA, k), x[1:(length(x) - k)])
+  DF = as.data.frame(cbind(lagged, x))
+  colnames(DF) <- c(paste0("x-", k), "x")
+  DF[is.na(DF)] <- 0
+  return(DF)
+}
+
+
+supervised <- lag_transform(diffed, 1)
+head(supervised)
+
+
+```
+
+
+## Split Dataset into Training & Testing Sets (70/30 Time-Series Split)
+
+```{r}
+## Split into train and test sets for time series
+
+N <- nrow(supervised)              # Total observations
+n <- round(N * 0.70, digits = 0)   # 70% split point
+
+train <- supervised[1:n, ]         # First 70% as training
+test  <- supervised[(n+1):N, ]     # Remaining 30% as testing
+
+
+```
+
+
+
+```{r}
+# ============================================================
+# ARIMA Baseline using the same 70/30 train-test split
+# ============================================================
+
+# Original prevalence series
+series <- as.numeric(df$prevalence)
+
+# Define train/test on the ORIGINAL level series
+train_series <- series[1:n]
+test_series  <- series[(n + 1):N]
+
+# Fit ARIMA on training data only
+arima_fit <- auto.arima(
+  train_series,
+  seasonal = FALSE,     # set to TRUE only if you want seasonal ARIMA
+  stepwise = FALSE,
+  approximation = FALSE
+)
+
+# Display fitted model
+summary(arima_fit)
+
+# Forecast over the test horizon
+h <- length(test_series)
+arima_fc <- forecast(arima_fit, h = h)
+
+# Predicted values
+arima_pred <- as.numeric(arima_fc$mean)
+
+# Optional: prediction intervals
+arima_lower_95 <- as.numeric(arima_fc$lower[, 2])
+arima_upper_95 <- as.numeric(arima_fc$upper[, 2])
+
+```
+
+
+```{r}
+# ============================================================
+# ARIMA Predictions on Training Data
+# ============================================================
+
+# In-sample fitted values
+arima_train_pred <- fitted(arima_fit)
+
+# Compute training errors
+arima_train_rmse <- sqrt(mean((train_series - arima_train_pred)^2, na.rm = TRUE))
+arima_train_mae  <- mean(abs(train_series - arima_train_pred), na.rm = TRUE)
+
+cat("ARIMA Train RMSE:", round(arima_train_rmse, 4), "\n")
+cat("ARIMA Train MAE :", round(arima_train_mae, 4), "\n")
+```
+
+```{r}
+# ============================================================
+# Evaluation Metrics for ARIMA
+# ============================================================
+
+rmse_fun <- function(actual, pred) {
+  sqrt(mean((actual - pred)^2, na.rm = TRUE))
+}
+
+mae_fun <- function(actual, pred) {
+  mean(abs(actual - pred), na.rm = TRUE)
+}
+
+arima_test_rmse <- rmse_fun(test_series, arima_pred)
+arima_test_mae  <- mae_fun(test_series, arima_pred)
+
+cat("ARIMA Test RMSE:", round(arima_test_rmse, 4), "\n")
+cat("ARIMA Test MAE :", round(arima_test_mae, 4), "\n")
+```
+
+```{r}
+# Create date index for the test period
+test_dates <- df$date[(n + 1):N]
+
+arima_plot_df <- data.frame(
+  date      = test_dates,
+  observed  = test_series,
+  predicted = arima_pred,
+  lower_95  = arima_lower_95,
+  upper_95  = arima_upper_95
+)
+
+p_arima <- ggplot(arima_plot_df, aes(x = date)) +
+  geom_line(aes(y = observed, color = "Observed"), linewidth = 0.8) +
+  geom_point(aes(y = observed, color = "Observed"), size = 1.8) +
+  geom_line(aes(y = predicted, color = "ARIMA Forecast"), linewidth = 0.8) +
+  geom_ribbon(aes(ymin = lower_95, ymax = upper_95),
+              alpha = 0.2, fill = "grey70") +
+  theme_minimal(base_size = 10) +
+  labs(
+    title = "ARIMA Forecast vs Observed HIV Prevalence",
+    x = "Date",
+    y = "Prevalence",
+    color = NULL
+  )
+
+p_arima
+```
+
+
+# diebold–mariano test
+```{r}
+# Forecast errors
+e_lstm  <- actual_test - predictions
+e_arima <- test_series - arima_pred
+length(e_lstm)
+length(e_arima)
+```
+
+
+```{r}
+min_len <- min(length(e_lstm), length(e_arima))
+
+e_lstm  <- e_lstm[1:min_len]
+e_arima <- e_arima[1:min_len]
+```
+
+
+```{r}
+dm_result <- dm.test(
+  e1 = e_lstm,
+  e2 = e_arima,
+  alternative = "two.sided",
+  h = 1,           # 1-step ahead forecasts
+  power = 2        # squared error loss
+)
+
+dm_result
+```
+

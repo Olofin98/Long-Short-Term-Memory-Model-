@@ -1,0 +1,236 @@
+---
+title: "R Lab 5"
+output: html_document
+date: '2022-06-24'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("/Users/olofindo/Documents/Statsclinic")
+```
+
+Today, we will examine models that allow us to compare proportions and odds.
+
+```{r}
+library(dplyr) #great for data management
+```
+
+
+You are interested in examining the relationship of severe mental distress and the hours worked. You also create a binary variable for hours worked (1 - worked >80 hours, 0 - did not work >80 hours). You define severe mental distress as mental health score >20 (range of 0 - 36) and create a binary variable (1 - has severe mental distress, 0 - does not have severe mental distress).
+
+You can use either chi-square or logistic regression for this question.
+
+What are some reasons to prefer one relative to the other?
+- Chi-square can be calculated by hand in the simplest 2 by 2 setting
+- Logistic regression can be used for prediction and estimation
+- Logistic regression can accept continuous variables as predictors.
+- Adjustment for confounding is possible in logistic regression.
+
+Load the data from your working directory.
+```{r}
+library(readr)
+rds <- read_csv("residentdoctors.csv")
+```
+
+First, we create the binary variables from the continuous variables
+```{r}
+rds$hoursgt80 <- rds %>% 
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked > 80, 1, 0))}
+```
+
+
+```{r}
+rds$severe.mh <- rds %>% 
+  {ifelse(is.na(.$mentalhealth_score), NA,
+         ifelse(.$mentalhealth_score > 20, 1, 0))}
+```
+
+
+# Chi-square Test
+
+##Crosstabulation
+A 2by2 table is essential for understanding the chi square test.
+```{r}
+table(rds$hoursgt80, rds$severe.mh)
+```
+
+For more informative data, create versions of the variables that are better labeled.
+```{r}
+rds$hoursgt80x <- rds %>% 
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked > 80, ">80 hrs", "<=80 hrs"))}
+```
+
+```{r}
+rds$severe.mhx <- rds %>% 
+  {ifelse(is.na(.$mentalhealth_score), NA,
+         ifelse(.$mentalhealth_score > 20, "Severe mental distress", "No severe mental distress"))}
+```
+
+```{r}
+tab1 <-table(rds$hoursgt80x, rds$severe.mhx)
+
+```
+
+```{r}
+#prop.table(tab1) # cell percentages
+
+prop.table(tab1, 1) # row percentages
+prop.table(tab1, 2) # column percentages
+```
+
+
+```{r}
+#chisq.test(data_frame$treatment, data_frame$improvement, correct=FALSE)
+chisq.test(rds$severe.mh,rds$hoursgt80)
+chisq.test(rds$severe.mh, rds$hoursgt80, correct=FALSE)
+
+?chisq.test
+```
+
+```{r}
+summary(tab1)
+```
+
+
+***How do you interpret these findings?
+
+
+# Logistic regression
+
+```{r}
+model5a <- glm(severe.mh ~ hoursworked, data=rds, family=binomial(link = "logit"))
+summary(model5a)
+```
+
+R does not automatically output the odds ratios. You have to exponentiate the model results.
+```{r}
+exp(cbind(OR=coef(model5a), confint(model5a)))
+```
+
+
+
+
+
+
+# Multiple Logistic regression
+We can adjust for a number of variables.
+```{r}
+model5b <- glm(severe.mh ~ hoursworked + female + age + children, data=rds, family=binomial(link = "logit"))
+summary(model5b)
+
+exp(cbind(OR=coef(model5b), confint(model5b)))
+```
+
+###Model selection
+Remember that it is important to consider variables in their different forms since we don't know for sure what the true relationships are
+```{r}
+rds$chlcat <- rds %>%
+  {ifelse(is.na(.$children), NA,
+         ifelse(.$children %in% 0, 0,
+                ifelse(.$children %in% 1, 1,
+                       ifelse(.$children %in% 2, 2, 3))))}
+```
+
+```{r}
+model5c <- glm(severe.mh ~ hoursworked + female + as.factor(agecat) + children, data=rds, family=binomial(link = "logit"))
+summary(model5c)
+```
+
+```{r}
+model5d <- glm(severe.mh ~ hoursworked + female + as.factor(agecat) + as.factor(chlcat), data=rds, family=binomial(link = "logit"))
+summary(model5d)
+```
+##### AIC
+```{r}
+AIC(model5a, model5b, model5c, model5d)
+```
+
+##### Log-likelihood
+```{r}
+library(lmtest)
+```
+
+You can view the log-likelihood of each model you want to compare
+```{r}
+logLik(model5a)
+```
+
+```{r}
+logLik(model5b)
+```
+
+```{r}
+lrtest(model5a, model5b)
+```
+
+For the log-likelihood ratio test (LR Test) to work, the two models must have been run in the same two exact datasets. If there are missing data in one of the covariates, the log likelihood ratio test will not give results. That's why the above didn't run.
+
+
+
+```{r}
+lrtest(model5c, model5b)
+```
+
+To interpret the results, you have to note which of the two models is nested in the other or more complex than the other. That is, which model contains the other? 
+
+- If the two models have different number of covariates, the model with fewer covariates is simpler. It is also nested if setting one or more covariates to zero in the complex model can give you the simpler model
+- If you have a continuous vs categorical variable, the model with the continuous variable is simpler.
+- If you have interaction terms in one model, the model without interaction terms is simpler
+
+
+Next, note the p-values.
+If the p-value of the LR test is significant, then the complex model is better. If not, the nested model is better!
+
+
+Final model
+```{r}
+exp(cbind(OR=coef(model5a), confint(model5a)))
+```
+
+### Interaction terms
+You might want to see whether the odds ratio varies within levels of a third variable.
+```{r}
+model5e.int <- glm(severe.mh ~ hoursgt80*female + hoursgt80 + female, data=rds, family=binomial(link = "logit"))
+summary(model5e.int)
+```
+
+```{r}
+model5e <- glm(severe.mh ~ hoursgt80 + female, data=rds, family=binomial(link = "logit"))
+summary(model5e)
+```
+
+```{r}
+lrtest(model5e, model5e.int)
+```
+
+
+
+# GLM Models for Risk ratios
+Note that logistic regression models give us odds ratios. Sometimes, we want risk ratios. People argue that risk ratios are more interpretable. Two models give us risk ratios.
+1) Log-binomial
+```{r}
+logbin <- glm(hoursgt80 ~ female, data=rds, family=binomial(link = "log"))
+summary(logbin)
+```
+
+R does not automatically output the odds ratios. You have to exponentiate the model results.
+```{r}
+exp(cbind(RR=coef(logbin), confint(logbin)))
+```
+
+2) Log-Poisson
+Unfortunately, the log-binomial model fails to converge very often. In that case, an option is the log-poisson model. The log-Poisson model tends to give larger p-values and wider confidence intervals for the same dataset. Thus, we usually try the log-binomial first.
+```{r}
+logfish <- glm(hoursgt80 ~ female, data=rds, family=poisson(link = "log"))
+summary(logfish)
+```
+
+```{r}
+exp(cbind(RR=coef(logfish), confint(logfish)))
+```
+

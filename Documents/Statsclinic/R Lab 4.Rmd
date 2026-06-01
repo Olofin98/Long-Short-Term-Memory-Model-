@@ -1,0 +1,413 @@
+---
+title: "R Lab 4"
+output: html_document
+date: '2022-06-24'
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+rm(list = ls()) # clear our workspace. Always start with this
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("/Users/olofindo/Documents/Statsclinic")
+```
+
+# Correlation
+
+We can assess the extent to which two variables are related to each
+other. For instance, SBP at weeks 1 and 12.
+
+### Example 6
+
+```{r}
+library(readr)
+# bpfup <- read_csv("bpfup.csv ")
+
+rds <- read_csv("residentdoctors.csv")
+```
+
+```{r}
+#head(bpfup)
+
+plot(rds$age,rds$mentalhealth_score)
+```
+
+```{r}
+library(ggplot2)
+#p <- ggplot(bpfup, aes(x = Week0, y=Week24)) + geom_point() + labs(y="SBP at week 24, mmHg", x="SBP at week 0, mmHg")
+#p
+```
+
+```{r}
+#cor(bpfup$Week0, bpfup$Week24, method = c("pearson"))
+
+cor(rds$age,rds$mentalhealth_score, method = c("spearman"))
+cor(rds$age,rds$mentalhealth_score, method = c("pearson"))
+
+cor.test(rds$age,rds$mentalhealth_score, method = c("pearson"))
+
+```
+
+Note that there are other types of correlation - Kendall, Spearman.
+Discussing them is beyond this class.
+
+### Example 7
+
+You asked 187 resident doctors about their hours worked and GHQ score, a
+metric of mental health, and assess the extent to which both were
+correlated.
+
+```{r}
+library(readr)
+rds <- read_csv("residentdoctors.csv")
+```
+
+```{r}
+head(rds)
+```
+
+```{r}
+library(ggplot2)
+p <- ggplot(rds, aes(x = hoursworked, y=mentalhealth_score)) + geom_point() + labs(y="Mental Health Score", x="Hours worked")
+p
+```
+
+\*\*What do you notice? Is it possible that respondents were
+approximating the number of hours they worked?
+
+```{r}
+cor(rds$mentalhealth_score, rds$hoursworked, method = c("pearson"))
+```
+
+\*\*What do you conclude?
+
+# Simple Linear regression
+
+Simple linear regression is also used to assess the extent to which two
+variables may be related to one another. Linear regression is usually
+preferable to correlation because: 1) Linear regression gives us an
+effect measure which reveals the magnitude of the relationship 2) One of
+the variables need not be continuous. It can be dichotomous or
+categorical 3) Linear regression can include adjustment or control for
+confounding.
+
+### Example 8
+
+Say you are interested in assessing whether there is a relationship
+between the resident doctors' mental health and the number of hours
+usually worked per week.
+
+There are two common ways to program linear regression in R. 1)
+lm([target variable] \~ [predictor variables], data = [data source]) 2)
+glm([target variable] \~ [predictor variables], data = [data source],
+family=gaussian(link = "identity"))
+
+Here's how to implement the first approach
+
+```{r}
+model1 <- lm(mentalhealth_score ~ hoursworked, data = rds)
+summary(model1)
+```
+
+\*\* How do you interpret your findings? Pay attention to: - the
+estimate - the standard error - the p-value - the R-squared
+
+Here's how to implement the second approach
+
+```{r}
+model2 <- glm(mentalhealth_score ~ hoursworked, data=rds, family=gaussian(link = "identity"))
+summary(model2)
+
+model2$fitted.values
+round(mean(rds$mentalhealth_score - model2$fitted.values),1)
+round(mean(model2$residuals),1)
+
+```
+
+###Evaluating regression models
+
+We can assess Goodness of Fit
+
+```{r}
+#par(mfrow=c(2,2)) #tells R to arrange the next output in a 2 by 2 form
+plot(model2)
+```
+
+### Binary predictor variable
+
+The predictor/independent variable in a linear regression model can be a
+binary or dichotomous. Let's illustrate this using the same recent
+example.
+
+Instead of using 'hoursworked' as a continuous variable, we could
+examine whether the number of hours worked was greater than a
+threshold - maybe 70 hours.
+
+First, we create the binary variable
+
+```{r}
+library(dplyr) #which allows us use the pipe operator
+rds$hoursgt70 <- rds %>%
+  {ifelse(is.na(.$hoursworked), NA, #This checks for missing variables
+         ifelse(.$hoursworked > 70, 1, 0))} 
+              #Notice the logic: criteria, response if yes, response if no
+```
+
+This is the model with hours worked as a continuous variable
+
+```{r}
+model2 <- glm(mentalhealth_score ~ hoursworked, data=rds, family=gaussian(link = "identity"))
+summary(model2)
+```
+
+Now, the model with hours worked as a binary variable
+
+```{r}
+model3 <- glm(mentalhealth_score ~ hoursgt70, data=rds, family=gaussian(link = "identity"))
+summary(model3)
+```
+
+### Categorical Variables to test for trend
+
+We can use categorical variables to test for linear trend.
+
+First, we create a categorical variable
+
+```{r}
+rds$hourscat <- rds %>%
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked <= 40, 1,
+                ifelse(.$hoursworked <= 60, 2,
+                       ifelse(.$hoursworked <= 80, 3, 4))))}
+```
+
+```{r}
+rds$hourscatx <- rds %>%
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked <= 40, "<=40 hours",
+                ifelse(.$hoursworked <= 60, "41 - 60 hours",
+                       ifelse(.$hoursworked <= 80, "61 - 80 hours", "81+ hours"))))}
+```
+
+
+Now we run the model. Note that the hourscat variable assumes that each
+category is actually a numeric variable.
+
+```{r}
+model3 <- glm(mentalhealth_score ~ hourscat, data=rds, family=gaussian(link = "identity"))
+summary(model3)
+```
+
+\*\*How do you interpret?
+
+As an alternative, you can model the categorical variable, specifying to
+R that you want this to be run as a categorical or factor variable.
+
+```{r}
+model3 <- glm(mentalhealth_score ~ as.factor(hourscatx), data=rds, family=gaussian(link = "identity"))
+summary(model3)
+```
+
+### Indicator variables
+
+Indicator or dummy variables are a special type of binary variables.
+Essentially, you can convert a categorical variable to a number of
+indicator variables, such that each level of the categorical variable is
+represented by its own indicator variable.
+
+We can create a dummy variable in R.
+
+```{r}
+rds$hourscat1 <- rds %>%
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked <= 40, 1,
+                ifelse(.$hoursworked <= 60, 0,
+                       ifelse(.$hoursworked <= 80, 0, 0))))}
+rds$hourscat2 <- rds %>%
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked <= 40, 0,
+                ifelse(.$hoursworked <= 60, 1,
+                       ifelse(.$hoursworked <= 80, 0, 0))))}
+rds$hourscat3 <- rds %>%
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked <= 40, 0,
+                ifelse(.$hoursworked <= 60, 0,
+                       ifelse(.$hoursworked <= 80, 1, 0))))}
+rds$hourscat4 <- rds %>%
+  {ifelse(is.na(.$hoursworked), NA,
+         ifelse(.$hoursworked <= 40, 0,
+                ifelse(.$hoursworked <= 60, 0,
+                       ifelse(.$hoursworked <= 80, 0, 1))))}
+```
+
+When we have multiple parameters in a model, we use the F statistic to
+decide whether to look at the individual beta estimates. This is the
+Omnibus Test.
+
+```{r}
+model4 <- lm(mentalhealth_score ~ hourscat1 + hourscat3 + hourscat4, data = rds)
+summary(model4)
+```
+
+\*\* What do you conclude?
+
+# Multiple Linear regression
+
+Sometimes, we can have more than one predictor variable or covariate. A
+number of reasons why we may have multiple predictors 1) to improve
+prediction 2) to adjust for confounding
+
+Here's the model we saw earlier
+
+```{r}
+model4 <- lm(mentalhealth_score ~ hourscat1 + hourscat3 + hourscat4, data = rds)
+summary(model4)
+```
+
+Say you believe that gender is important to consider. So, you include it
+in the model. This is now a multiple linear regression, or a
+multivariable linear regression.
+
+```{r}
+model5 <- lm(mentalhealth_score ~ hourscat1 + hourscat3 + hourscat4 + female, data = rds)
+summary(model5)
+```
+
+Take a look at the R-squared: without the female variable vs with the
+female variable. Simply adding one variable leads to a higher R-squared,
+whether that new variable improves your model or not.
+
+Hence, we depend on the adjusted R-squared. The adj. R-squared is
+adjusted for the number of variables.
+
+Let's try a different covariate - the number of children the resident
+has, a count variable
+
+```{r}
+model6 <- lm(mentalhealth_score ~ hourscat2 + hourscat3 + hourscat4 + children, data = rds)
+summary(model6)
+```
+
+We could also use the categorical form of the variable. Here, you have
+to be careful to not fall into the trap of modeling your categorical
+variable as a continuous or numeric variable as shown here.
+
+```{r}
+rds$chlcat <- rds %>%
+  {ifelse(is.na(.$children), NA,
+         ifelse(.$children %in% 0, 0,
+                ifelse(.$children %in% 1, 1,
+                       ifelse(.$children %in% 2, 2, 3))))}
+```
+
+```{r}
+model7 <- lm(mentalhealth_score ~ hourscat2 + hourscat3 + hourscat4 + chlcat, data = rds)
+summary(model7)
+```
+
+Instead, this is one way to do it
+
+```{r}
+model7 <- lm(mentalhealth_score ~ hourscat2 + hourscat3 + hourscat4 + as.factor(chlcat), data = rds)
+summary(model7)
+```
+
+You can compare models 4, without the number of children variable and 7,
+with the number of children
+
+```{r}
+AIC(model4, model7)
+
+AIC(model4,model7)
+```
+
+Here, we see that model 7 has the smaller AIC. We sometimes use a rule
+of thumb of **10**. Need to confirm
+
+If you also compare the adjusted R-squared for models 4 and 7, you would
+see that the R-squared is larger for model 7 suggesting improved
+prediction.
+
+You can also add more variables. There are often a number of ways to
+decide what variables to include in the model.
+
+```{r}
+model8 <- lm(mentalhealth_score ~ hourscat2 + hourscat3 + hourscat4 + as.factor(chlcat) + as.factor(agecat), data = rds)
+summary(model8)
+```
+
+```{r}
+AIC(model7, model8)
+```
+
+### Interaction terms
+
+Sometimes, we may want to test to see if there is effect modification or
+some interaction. Interaction refers to a different magnitude of
+relationship between two variables depending on the levels of a 3rd
+variable.
+
+Here is the model we just looked at earlier
+
+```{r}
+model8 <- lm(mentalhealth_score ~ as.factor(hourscat) + as.factor(chlcat) + as.factor(agecat), data = rds)
+summary(model8)
+```
+
+Here is the same model with an interaction term for sex
+
+```{r}
+model9 <- lm(mentalhealth_score ~ as.factor(hourscat) + as.factor(chlcat) * as.factor(agecat), data = rds)
+summary(model9)
+```
+
+```{r}
+AIC(model8, model9)
+```
+
+\*What do you conclude? Is model 8 better than model 9? If the models
+are not significantly different, which one is more parsimonious?
+
+# Non-linearity
+
+We can assess the nonlinearity of the relationship of continuous
+variables.
+
+```{r}
+model10 <- lm(mentalhealth_score ~ hoursworked, data = rds)
+summary(model10)
+```
+
+```{r}
+rds$hours_sqd <- rds$hoursworked*rds$hoursworked
+model11 <- lm(mentalhealth_score ~ hoursworked + hours_sqd, data = rds)
+summary(model11)
+```
+
+We can use the Akaike Information Criterion (AIC) to choose the better
+model. The model with the smaller AIC is the better model, if the
+difference is \>10. If there is no meaningful difference in the AIC, we
+would opt for the simpler or more parsimonious model
+
+```{r}
+AIC(model10, model11)
+```
+
+If the p-value for the quadratic variable is not significant, then,
+there is no need to examine the cubed variable. Lets pretend for
+didactic purposes and go ahead to show you what the higher order
+analysis will look like.
+
+```{r}
+rds$hours_cubed <- rds$hoursworked*rds$hoursworked*rds$hoursworked
+model12 <- lm(mentalhealth_score ~ hoursworked + hours_sqd + hours_cubed, data = rds)
+summary(model12)
+```
+
+```{r}
+AIC(model10, model12)
+```

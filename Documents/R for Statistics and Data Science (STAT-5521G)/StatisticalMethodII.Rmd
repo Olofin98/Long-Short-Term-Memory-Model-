@@ -1,0 +1,369 @@
+---
+title: "Assignment III"
+author: "Daniel Oluwafemi Olofin"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Problem 1
+
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(tidyverse)
+data <- read_table("Popu_data.txt")
+
+#Data Mgnt
+
+data %>% 
+  select(-5) -> data
+```
+
+## 1. Fit the Regression Model and Identify Outliers Using Bonferroni Procedure
+
+```{r message=FALSE, warning=FALSE}
+# Fit the model
+model <- lm(Y ~ X1 + X2 + X3, data = data)
+
+summary(model)
+```
+`Y = 4150 + 0.0007871 * X1 - 13.17 * X2 + 623.6 * X3`
+
+```{r}
+# Externally Studentized Residuals
+library(car)
+stud_res <- rstudent(model)
+
+# Bonferroni Outlier Test
+outlierTest(model)  # From car package
+```
+
+Since the **P-value < 0.05 level of significance**, it show that the observation is considered outliers.
+
+
+## 2. Hat Matrix Diagonals (Leverage) and Identifying High Leverage Points
+
+```{r message=FALSE, warning=FALSE}
+# Get hat values
+h_ii <- hatvalues(model)
+
+# Identify high leverage points
+n <- nrow(data)
+p <- length(coef(model))  # includes intercept
+cutoff <- 2 * p / n
+which(h_ii > cutoff)
+```
+Points with leverage > 2p/n are considered high leverage. Observations 3, 5, 16, 21, 22, 43, 44, and 48 were identified as high leverage points based on the hat matrix diagonals. These are data points with unusually extreme predictor values compared to the rest of the dataset. High leverage points have the potential to strongly influence the regression model, especially the fitted values.
+
+## 3. DFFITS, DFBETAS, and Cook’s Distance for Influential Observations
+
+```{r message=FALSE, warning=FALSE}
+# DFFITS
+dffits_vals <- dffits(model)
+
+# DFBETAS
+dfbetas_vals <- dfbetas(model)
+
+# Cook’s Distance
+cooks <- cooks.distance(model)
+
+# Thresholds:
+dffits_cutoff <- 2 * sqrt(p / n)
+dfbetas_cutoff <- 2 / sqrt(n)
+influential_points <- which(abs(dffits_vals) > dffits_cutoff |
+                            apply(abs(dfbetas_vals) > dfbetas_cutoff, 1, any) |
+                            cooks > 1)
+influential_points
+```
+Observations 10, 14, 16, 32, 43, and 51 appear consistently across multiple influence diagnostics (DFFITS, DFBETAS, and Cook’s Distance). This consistency suggests that these points may have a disproportionate impact on your regression model's estimates, including coefficients and predictions.
+
+
+## 4. ANOVA: Decompose SSR into Extra Sums of Squares
+```{r message=FALSE, warning=FALSE}
+# Full model
+full_model <- lm(Y ~ X1 + X2 + X3, data = data)
+
+# Reduced model 1: X2 given X1
+reduced_model1 <- lm(Y ~ X1, data = data)
+
+# Extra SS for X2 | X1
+anova(reduced_model1, full_model)
+
+# Reduced model 2: X3 given X1 and X2
+reduced_model2 <- lm(Y ~ X1 + X2, data = data)
+
+# Extra SS for X3 | X1, X2
+anova(reduced_model2, full_model)
+```
+
+## 5. F-test to See if X2 Can Be Dropped Given X1 and X3 Are Retained
+
+```{r message=FALSE, warning=FALSE}
+# Reduced model without X2
+reduced_model3 <- lm(Y ~ X1 + X3, data = data)
+
+# Compare with full model
+anova(reduced_model3, full_model)
+```
+Since then P-value > 0.05 level of significance, we that the reduced model is statistically significant and X2 should be dropped from the model.
+
+
+# Problem 2
+
+```{r message=FALSE, warning=FALSE}
+House_data <- read_table("House_data.txt")
+
+#Data Managemnet
+House_data %>% 
+  select(-8) -> House_data
+
+str_to_sentence(names(House_data)) -> names(House_data)
+
+```
+
+
+## 1. Show the linear regression output in R.
+
+```{r message=FALSE, warning=FALSE}
+Crime_model <- lm(Crime ~., data = House_data)
+
+summary(Crime_model)
+```
+
+## Construct the ANOVA table and provide interpretation for each single number in the table.
+
+```{r message=FALSE, warning=FALSE}
+anova(Crime_model)
+```
+The ANOVA table indicates that several predictors significantly explain the variation in the Crime variable. Specifically, population (Pop) has a statistically significant effect on crime rates, with an F-value of 14.04 and a p-value of 0.0006. Population change (Popch) also contributes modestly to the model (F = 4.43, p = 0.0421), while the percentage of children (Child) in the population shows a significant relationship with crime (F = 6.98, p = 0.0120).Importantly, the percentage of students receiving free or reduced lunch (Lunch) is the strongest predictor in the model, with an F-value of 37.79 and a highly significant p-value of 3.97e-07. Similarly, income (Income) has a significant impact on crime, with an F-value of 7.35 and a p-value of 0.0101. similarly, the change in crime (Crimech) does not significantly contribute to the model (F = 0.60, p = 0.4424), suggesting it may not be a useful predictor in explaining current crime rates in this context.
+
+
+## 3. Perform an overall F-test of whether there is a regression relation between CRIME Y and the set of variables in the model, using α = 0.05.
+
+
+### 3.1. .State the null and alternative hypotheses **for Overall F-test**.
+**Null Hypothesis (\( H_0 \)):** \( \beta_1 = 0 \) for i = 1,2..., 6 (None of the predictors have a linear relationship with the Crime variable.)
+
+**Alternative Hypothesis (\( H_a \)):** \( \beta_1 \neq 0 \) for i = 1,2..., 6 (At least one predictor has a statistically significant effect on the Crime variable.)
+
+### 3.2. What is the value of the test statistic for this test?
+\[
+F = \frac{\text{Mean Square Regression (MSR)}}{\text{Mean Square Error (MSE)}} = \frac{SSR / p}{SSE / (n - p - 1)}
+\]
+
+Substituting the values from the model:
+
+\[
+F = 11.86
+\]
+
+This statistic compares the variance explained by the model to the unexplained variance. A large value of $F$ provides evidence that at least one predictor is linearly related to the response variable (CRIME).
+
+### 3.3. What degrees of freedom are used for this test?
+The overall $F$-test for regression is based on two types of degrees of freedom:
+
+\begin{itemize}
+  \item \textbf{Numerator degrees of freedom (df\textsubscript{reg})}: This corresponds to the number of predictors in the model. \\
+  Since there are 6 predictors (POP, POPCH, CHILD, LUNCH, INCOME, CRIMECH), we have:
+  \[
+  df_{\text{reg}} = p = 6
+  \]
+  
+  \item \textbf{Denominator degrees of freedom (df\textsubscript{res})}: This is the residual degrees of freedom, calculated as:
+  \[
+  df_{\text{res}} = n - p - 1 = 44 - 6 - 1 = 37
+  \]
+\end{itemize}
+
+Thus, the $F$-statistic follows an $F$-distribution with $df_{\text{reg}} = 6$ and $df_{\text{res}} = 37$.
+
+### 3.4. What is the p-value for this test?
+The p-value associated with the overall $F$-statistic is:
+
+\[
+\text{p-value} = 2.19 \times 10^{-7}
+\]
+
+This p-value represents the probability of observing an $F$-statistic as extreme as 11.86, or more extreme, under the null hypothesis that none of the predictors are related to CRIME.
+
+Since the p-value is significantly smaller than the chosen significance level $\alpha = 0.05$, it provides very strong evidence against the null hypothesis.
+
+### 3.5. Should the null hypothesis be rejected? Explain.
+We compare the p-value from the $F$-test to the significance level $\alpha = 0.05$:
+
+\[
+\text{p-value} = 2.19 \times 10^{-7} < \alpha = 0.05
+\]
+
+Since the p-value is much smaller than the significance level, we \textbf{reject the null hypothesis}.
+
+\bigskip
+
+There is sufficient statistical evidence to conclude that at least one of the predictors (POP, POPCH, CHILD, LUNCH, INCOME, CRIMECH) is linearly related to CRIME.
+
+### 3.6. State your conclusions.
+Based on the overall $F$-test, we have strong statistical evidence that the regression model provides a meaningful explanation of the variation in CRIME across neighborhoods.
+
+Since the null hypothesis was rejected, we conclude that \textbf{at least one predictor} (among POP, POPCH, CHILD, LUNCH, INCOME, CRIMECH) contributes significantly to predicting crime rates.
+
+\bigskip
+
+\textbf{Interpretation:} The multiple linear regression model is statistically significant at the $\alpha = 0.05$ level. This justifies the use of the model for further analysis and decision-making in both academic research and practical applications such as urban planning, policy design, and public safety.
+
+
+
+## 4. Test simultaneously whether 𝑃𝑂𝑃𝐶𝐻 and 𝐶𝑅𝐼𝑀𝐸𝐶𝐻 must be removed from the model. Test full vs reduced model. (23pts, 3 each, only the first one is 2)
+
+
+### 4.1.State the null and alternative hypotheses. H0: Ha:
+We are testing whether the set of predictors has any explanatory power for crime rates.
+
+We are testing whether the variables \texttt{POPCH} and \texttt{CRIMECH} contribute significantly to the regression model.
+
+\begin{align*}
+H_0 &: \beta_{\text{POPCH}} = \beta_{\text{CRIMECH}} = 0 \quad \text{(POPCH and CRIMECH have no effect)} \\
+H_a &: \text{At least one of } \beta_{\text{POPCH}}, \beta_{\text{CRIMECH}} \ne 0
+\end{align*}
+
+### 4.2.Write down the full model.
+The full regression model includes all six predictors:
+
+\[
+\text{CRIME} = \beta_0 + \beta_1 \text{POP} + \beta_2 \text{POPCH} + \beta_3 \text{CHILD} + \beta_4 \text{LUNCH} + \beta_5 \text{INCOME} + \beta_6 \text{CRIMECH} + \varepsilon
+\]
+
+
+```{r}
+# Full model (with all 6 predictors)
+full_model <- lm(Crime ~ ., data = House_data)
+```
+
+### 4.3.Write down the reduced model.
+
+The reduced model excludes \texttt{POPCH} and \texttt{CRIMECH}:
+
+\[
+\text{CRIME} = \beta_0 + \beta_1 \text{POP} + \beta_3 \text{CHILD} + \beta_4 \text{LUNCH} + \beta_5 \text{INCOME} + \varepsilon
+\]
+
+```{r}
+
+# Reduced model (without POPCH and CRIMECH)
+reduced_model <- lm(Crime ~ Pop + Child + Lunch + Income, data = House_data)
+
+# Compare using ANOVA (partial F-test)
+anova(reduced_model, full_model)
+
+```
+
+### 4.4.What is the value of the test statistic for this test?
+The value of the partial $F$-test is:
+
+\[
+F = 1.3691
+\]
+
+This statistic evaluates whether the additional predictors (POPCH and CRIMECH) significantly reduce the residual sum of squares.
+
+### 4.5. What degrees of freedom are used for this test?
+
+\begin{itemize}
+  \item Numerator degrees of freedom: $q = 2$ (number of predictors tested)
+  \item Denominator degrees of freedom: $df_{\text{res}} = 37$ (residual df from full model)
+\end{itemize}
+
+### 4.6.What is the p-value for this test?
+The p-value from the test is:
+
+\[
+\text{p-value} = 0.2669
+\]
+
+This is the probability of observing an $F$-statistic as extreme as 1.3691 under the null hypothesis. Since it exceeds $\alpha = 0.05$, we do not reject the null hypothesis.
+
+### 4.7.Should the null hypothesis be rejected? Explain
+
+\[
+\text{p-value} = 0.2669 > 0.05 \Rightarrow \textbf{Do not reject } H_0
+\]
+
+We conclude that POPCH and CRIMECH do not significantly improve the model and can be removed.
+
+### 4.8.State your conclusions. Should you remove those two variables?
+There is no statistically significant evidence that POPCH and CRIMECH improve the regression model.
+
+\bigskip
+
+\textbf{Interpretation:} Removing POPCH and CRIMECH leads to a simpler model without sacrificing predictive power. This aligns with best practices in both academic and industry settings: favoring parsimonious, interpretable models when additional variables provide no substantial benefit.
+
+## Perform equivalent of t-test to F-test for only 1 coefficient. (3pts)
+
+```{r}
+
+summary(full_model)$coefficients["Income", ]
+
+```
+
+
+
+
+```{r}
+
+reduced_income <- lm(Crime ~ Pop + Popch + Child + Lunch + Crimech, data = House_data)
+anova(reduced_income, full_model)
+
+
+```
+
+
+
+\bigskip
+
+
+\[
+H_0: \beta_{\text{Income}} = 0 \quad \text{vs.} \quad H_a: \beta_{\text{Income}} \ne 0
+\]
+
+\subsection*{Using the t-Test:}
+
+From the regression summary, we observe:
+
+\[
+t_{\text{Income}} = 2.766
+\quad \Rightarrow \quad
+F = t^2 = (2.766)^2 = 7.65
+\]
+
+\subsection*{Using the F-Test:}
+
+We fit a reduced model (excluding \texttt{Income}) and compare it with the full model:
+
+\[
+F = 7.65
+\]
+
+\subsection*{Conclusion:}
+
+When testing a single regression coefficient, the $t$-test and the $F$-test are mathematically equivalent:
+
+\[
+F = t^2
+\]
+
+
+## 6. Provide R output for Multicollinearity test.(3pts)
+```{r}
+
+vif(full_model)
+```
+
+
+

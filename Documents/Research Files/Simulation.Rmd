@@ -1,0 +1,147 @@
+---
+title: "Question 6 Test 2"
+author: "Daniel Olofin"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Theoretical Framework
+
+This simulation models the evolution of a student’s level of pain over time using a **discrete-time Markov Chain (DTMC)**. The pain level can evolve among three categorical states:
+
+- **State 1**: Severe pain  
+- **State 2**: Moderate pain  
+- **State 3**: Mild pain
+
+Let \(\{X_n\}_{n \geq 0}\) be a time-homogeneous Markov Chain defined on the finite state space \(S = \{1, 2, 3\}\), with transition probabilities defined by the matrix:
+
+\[
+P =
+\begin{bmatrix}
+1 - p & p & 0 \\
+p & 0 & 1 - p \\
+0 & p & 1 - p \\
+\end{bmatrix}
+\quad \text{where} \quad p = \frac{2}{5}
+\]
+
+This structure satisfies the **Markov property**: the probability of transitioning to the next state depends only on the current state.
+
+### Simulation Justification
+
+Transitions are simulated using uniform random variables \( r \sim U(0, 1) \), selecting the next state \( j \) such that:
+
+\[
+\sum_{k=1}^{j-1} P_{ik} < r \leq \sum_{k=1}^{j} P_{ik}
+\]
+
+This approach is equivalent to drawing from a **categorical distribution**:
+\[
+X_{n+1} \sim \text{Categorical}(P_{X_n, \cdot})
+\]
+
+Because the Markov chain is finite and time-homogeneous, its simulation via random sampling from the row-distribution of \(P\) is justified.
+
+
+# Run Simulation (Markov Chain ref Dr Wanduku )
+```{r}
+set.seed(123)
+
+p <- 2/5 
+time <- 60  # simulate for 60 days
+nsim <- 500 # number of sample paths
+initialcap <- 2 # start at state 2
+
+X <- matrix(0, nrow = time, ncol = nsim)
+Y <- matrix(0, nrow = time, ncol = nsim)
+X[1, ] <- initialcap
+for (i in 1:(time - 1)) {
+  for (j in 1:nsim) {
+    Y[i + 1, j] <- runif(1)
+    if (X[i, j] == 1) {
+      if (Y[i + 1, j] < 1 - p) {
+        X[i + 1, j] <- 1
+      } else {
+        X[i + 1, j] <- 2
+      }
+    } else if (X[i, j] == 2) {
+      if (Y[i + 1, j] < p) {
+        X[i + 1, j] <- 1
+      } else {
+        X[i + 1, j] <- 3
+      }
+    } else if (X[i, j] == 3) {
+      if (Y[i + 1, j] < p) {
+        X[i + 1, j] <- 2
+      } else {
+        X[i + 1, j] <- 3
+      }
+    }
+  }
+}
+```
+
+
+
+### Part (a): Produce a graph of three sample paths of the process starting in state “2”, and over 50-time steps. Select a given path, and describe the student’s progression in pain, over the 50 days.
+
+```{r}
+matplot(1:50, X[1:50, 1:3], type = "l", col = 1:3, lty = 1,
+        ylab = "Pain Level (State)", xlab = "Day", main = "3 Sample Paths")
+legend("topright", legend = c("Path 1", "Path 2", "Path 3"), col = c(5,4,6), lty = 1)
+
+```
+
+
+### Part (b): Use 500 sample paths to generate a sample from the population on the 60th day. Produce a graphical summary of the sample, describe the data, and answer the next question. 
+
+
+```{r}
+final_states <- X[time, ]
+barplot(table(final_states), col = "gray",
+        main = "Day 60 Pain Levels (500 Simulations)", ylab = "Count")
+
+```
+**Interpretation:** the dataset consists of the pain level states of 500 students on the 60th day of recovery, each generated from a separate simulated Markov Chain path starting at State 2. The data are categorical, representing three possible outcomes: State 1 (severe pain), State 2 (moderate pain), and State 3 (mild pain). The bar chart shows that the most frequently observed state on Day 60 was State 3, indicating that a substantial proportion of students had recovered to mild pain. State 1 was the second most frequent, while State 2 had the lowest count. This distribution reflects the variability in recovery outcomes and provides a snapshot of likely pain levels among students after 60 days of progression through the Markov process.
+
+### Part (c): Observe that the “levels of pain” is a categorical variable, thus, to conduct inferences in the population on the 60th day, we must select an appreciate numeric measure of center such as the mode or proportion. Use a 95% confidence interval (CI) to describe how the student would feel on the 60th day. That is, find the CI, and interpret the result.
+
+
+To describe how a student is likely to feel on the 60th day, we compute the **95% confidence intervals** for the proportions in each pain state. Since the data are categorical and represent proportions, we use the **normal approximation to the binomial distribution**:
+
+\[
+\hat{p} \pm z_{\alpha/2} \cdot \sqrt{ \frac{\hat{p}(1 - \hat{p})}{n} }
+\]
+
+Where:
+- \(\hat{p}\) is the sample proportion,
+- \(z_{\alpha/2} = 1.96\) for a 95% CI,
+- \(n = 500\) is the number of simulations.
+
+```{r}
+prop_state <- prop.table(table(final_states))
+ci_95 <- function(p, n) {
+  z <- qnorm(0.975)
+  err <- z * sqrt(p * (1 - p) / n)
+  c(p - err, p + err)
+}
+
+ci_matrix <- t(sapply(prop_state, function(p) ci_95(p, nsim)))
+rownames(ci_matrix) <- paste("State", names(prop_state))
+colnames(ci_matrix) <- c("Lower 95%", "Upper 95%")
+round(ci_matrix, 4)
+
+```
+
+
+**Interpretation:**
+Based on the simulation of 500 independent recovery paths, each representing a student’s daily progression of pain over 60 days starting from moderate pain, we estimate with 95% confidence that between 38.1% and 46.7% of students will be in mild pain (State 3) by Day 60, indicating a high likelihood of significant recovery. In contrast, between 27.1% and 35.3% are expected to still experience severe pain (State 1), while 22.5% to 30.3% will remain in moderate pain (State 2). These results suggest that although most students are likely to improve to a mild pain state, a considerable portion may still experience discomfort, highlighting the variability in recovery outcomes. The relatively narrow confidence intervals add credibility to these estimates.
+
+
+
+
+
+
+
