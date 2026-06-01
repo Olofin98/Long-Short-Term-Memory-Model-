@@ -575,10 +575,11 @@ ggsave(
 
 
 ```{r echo=FALSE, fig.height=7, fig.width=10, message=FALSE, warning=FALSE, out.width="100%"}
-# install.packages("DiagrammeR")  # if needed
 library(DiagrammeR)
+library(DiagrammeRsvg)
+library(rsvg)
 
-grViz("
+flow <- grViz("
 digraph LSTMFlow {
   graph [rankdir=LR, fontsize=10, labelloc=t, labeljust=l]
   node  [shape=rectangle, style=filled, fillcolor=lightgrey, color=grey25, fontname=Helvetica, fontsize=10]
@@ -599,21 +600,15 @@ digraph LSTMFlow {
   M [label='Invert differencing\\nŶ_level = Ŷ_diff + previous actual']
   N [label='Evaluate: RMSE/MAE']
   O [label='Visualize: lines\\nTrain/Test (ggplot)']
-
   A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O
-
-  subgraph cluster_notes {
-    label='Guards'
-    style=dashed
-    color=grey60
-    G1 [label='No leakage:\\nuse train min/max', fillcolor=white]
-    M1 [label='Use Series[n+i]\\nwhen reconstructing test', fillcolor=white]
-  }
-  G -> G1 [style=dashed]
-  M -> M1 [style=dashed]
 }
 ")
 
+svg <- export_svg(flow)
+
+writeLines(svg, "lstm_flow.svg")
+
+rsvg_png("lstm_flow.svg", "lstm_flow.png")
 ```
 
 **Fig. 1: Data preprocessing pipeline (flowchart)**
