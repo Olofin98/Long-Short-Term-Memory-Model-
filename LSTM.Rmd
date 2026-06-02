@@ -720,5 +720,3 @@ cat("- lstm_workflow_large.png\n")
 
 
 ```
-
-**Fig. 1: Data preprocessing pipeline (flowchart)**
