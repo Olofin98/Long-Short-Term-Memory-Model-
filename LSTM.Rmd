@@ -581,34 +581,144 @@ library(rsvg)
 
 flow <- grViz("
 digraph LSTMFlow {
-  graph [rankdir=LR, fontsize=10, labelloc=t, labeljust=l]
-  node  [shape=rectangle, style=filled, fillcolor=lightgrey, color=grey25, fontname=Helvetica, fontsize=10]
-  edge  [color=grey35, arrowsize=0.7]
+
+  graph [
+    rankdir=TB,
+    fontsize=18,
+    nodesep=0.6,
+    ranksep=0.9
+  ]
+
+  node [
+    shape=rectangle,
+    style='rounded,filled',
+    fillcolor=lightblue,
+    color=navy,
+    penwidth=1.5,
+    fontname=Helvetica,
+    fontsize=14,
+    margin='0.3,0.2'
+  ]
+
+  edge [
+    color=grey35,
+    penwidth=1.2,
+    arrowsize=1.0
+  ]
 
   A [label='Load data (xlsx) → df']
-  B [label='Clean & tidy\\nfill(YEAR), Month→Month_num, date']
-  C [label='Sort by date\\nselect(date, prevalence)']
-  D [label='Difference series\\nprevalence → diffed (first NA→0)']
-  E [label='Lag transform → supervised\\n(x-1, x)']
-  F [label='Time-ordered split\\n70% train / 30% test']
-  G [label='Scale to [-1,1]\\n(train min/max only)']
-  H [label='Reshape to 3D\\n[samples, timesteps=1, features=1]']
-  I [label='Build LSTM (stateful) + Dense(1)']
-  J [label='Train (epochs loop)\\nshuffle=FALSE; reset_states()']
-  K [label='Predict (scaled)\\ntrain & test']
-  L [label='Invert scaling\\n→ original diff units']
-  M [label='Invert differencing\\nŶ_level = Ŷ_diff + previous actual']
-  N [label='Evaluate: RMSE/MAE']
-  O [label='Visualize: lines\\nTrain/Test (ggplot)']
+  B [label='Clean & tidy\nfill(YEAR), Month→Month_num, date']
+  C [label='Sort by date\nselect(date, prevalence)']
+  D [label='Difference series\nprevalence → diffed\n(first NA → 0)']
+  E [label='Lag transform → supervised\n(x-1, x)']
+  F [label='Time-ordered split\n70% train / 30% test']
+  G [label='Scale to [-1,1]\n(train min/max only)']
+  H [label='Reshape to 3D\n[samples, timesteps=1, features=1]']
+  I [label='Build LSTM\n(stateful) + Dense(1)']
+  J [label='Train\nshuffle=FALSE\nreset_states()']
+  K [label='Predict\n(train & test)']
+  L [label='Invert scaling\n→ original diff units']
+  M [label='Invert differencing\nŶ_level = Ŷ_diff + previous actual']
+  N [label='Evaluate\nRMSE / MAE']
+  O [label='Visualize\nTrain/Test (ggplot)']
+
   A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O
 }
 ")
 
 svg <- export_svg(flow)
 
+writeLines(svg, "lstm_flow_vertical.svg")
+
+rsvg_png(
+  charToRaw(svg),
+  file = "lstm_flow_vertical.png",
+  width = 1800,
+  height = 5000
+)
+
+# Export SVG
+svg <- export_svg(flow)
 writeLines(svg, "lstm_flow.svg")
 
-rsvg_png("lstm_flow.svg", "lstm_flow.png")
+# Create workflow diagram
+flow <- grViz("
+digraph LSTMFlow {
+
+  graph [
+    rankdir=TB,
+    fontsize=24,
+    labelloc=t,
+    label='LSTM Forecasting Workflow',
+    nodesep=1.0,
+    ranksep=1.5,
+    pad=0.5
+  ]
+
+  node [
+    shape=rectangle,
+    style='rounded,filled',
+    fillcolor=lightblue,
+    color=navy,
+    penwidth=2,
+    fontname=Helvetica,
+    fontsize=20,
+    margin='0.5,0.4'
+  ]
+
+  edge [
+    color=grey35,
+    penwidth=2,
+    arrowsize=1.3
+  ]
+
+  A [label='Load data (xlsx) → df']
+
+  B [label='Clean & tidy\nfill(YEAR),\nMonth → Month_num,\ndate']
+
+  C [label='Sort by date\nselect(date, prevalence)']
+
+  D [label='Difference series\nprevalence → diffed\n(first NA → 0)']
+
+  E [label='Lag transform → supervised\n(x−1, x)']
+
+  F [label='Time-ordered split\n70% Train\n30% Test']
+
+  G [label='Scale to [-1, 1]\n(train min/max only)']
+
+  H [label='Reshape to 3D\n[samples,\ntimesteps = 1,\nfeatures = 1]']
+
+  I [label='Build LSTM Model\n(Stateful) + Dense(1)']
+
+  J [label='Train Model\nshuffle = FALSE\nreset_states()']
+
+  K [label='Predict\nTrain & Test']
+
+  L [label='Invert Scaling\n→ Original diff units']
+
+  M [label='Invert Differencing\nŶ_level = Ŷ_diff +\nPrevious Actual']
+
+  N [label='Evaluate\nRMSE / MAE']
+
+  O [label='Visualize Results\nTrain vs Test\n(ggplot2)']
+
+  A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O
+}
+")
+
+
+# Export large PNG (high resolution)
+rsvg_png(
+  charToRaw(svg),
+  file = "lstm_workflow_large.png",
+  width = 4000,
+  height = 10000
+)
+
+
+cat("- lstm_workflow_large.png\n")
+
+
 ```
 
 **Fig. 1: Data preprocessing pipeline (flowchart)**
